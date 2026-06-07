@@ -1,0 +1,37 @@
+// DB Updated with Hello1234 - Restarting server
+globalThis.crypto = require('crypto').webcrypto;
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('/app/uploads'));
+app.use('/api/uploads', express.static('/app/uploads'));
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log('MongoDB Connection Error:', err));
+
+// Define Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/articles', require('./routes/articles'));
+app.use('/api/media-assets', require('./routes/mediaAssets'));
+app.use('/api/plans', require('./routes/plans'));
+app.use('/api/users', require('./routes/users'));
+
+
+app.get('/', (req, res) => {
+  res.send('ITV CMS API is running...');
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
