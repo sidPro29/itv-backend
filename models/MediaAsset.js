@@ -7,6 +7,12 @@ const MediaAssetSchema = new mongoose.Schema({
   subtitle: { type: String },
   description: { type: String, required: true },
   images: [{ type: String }],
+  views: { type: Number, default: 0 },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  reference_links: [{
+    text: String,
+    url: String
+  }],
 
   // videos object – stores dynamic keys: clipId, svpRefNo, youtube, non-svp-1, non-svp-2, ...
   videos: { type: mongoose.Schema.Types.Mixed, default: {} },

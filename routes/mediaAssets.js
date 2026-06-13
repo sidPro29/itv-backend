@@ -263,4 +263,38 @@ router.put('/:id', [auth, admin], async (req, res) => {
   }
 });
 
+// Increment view count (Public)
+router.put('/:id/view', async (req, res) => {
+  try {
+    const asset = await MediaAsset.findById(req.params.id);
+    if (!asset) return res.status(404).json({ msg: 'Media Asset not found' });
+    asset.views = (asset.views || 0) + 1;
+    await asset.save();
+    res.json({ views: asset.views });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Toggle Like (Auth required)
+router.put('/:id/like', auth, async (req, res) => {
+  try {
+    const asset = await MediaAsset.findById(req.params.id);
+    if (!asset) return res.status(404).json({ msg: 'Media Asset not found' });
+
+    const index = asset.likes.indexOf(req.user.id);
+    if (index === -1) {
+      asset.likes.push(req.user.id);
+    } else {
+      asset.likes.splice(index, 1);
+    }
+    await asset.save();
+    res.json(asset.likes);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 module.exports = router;

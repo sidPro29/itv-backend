@@ -8,6 +8,16 @@ const ArticleSchema = new mongoose.Schema({
   imageUrl: { type: String },
   videoUrl: { type: String },
   keywords: [{ type: String }],
+  views: { type: Number, default: 0 },
+  author: { type: String },
+  author_bio: { type: String },
+  credits: { type: mongoose.Schema.Types.Mixed },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  comments: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    text: String,
+    createdAt: { type: Date, default: Date.now }
+  }],
   publishedDate: { type: Date, default: Date.now },
   createdAt: { type: Date, default: Date.now }
 });

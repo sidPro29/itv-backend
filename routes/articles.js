@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
 // Get single article by ID
 router.get('/:id', async (req, res) => {
   try {
-    const article = await Article.findById(req.params.id);
+    const article = await Article.findById(req.params.id).populate('comments.user', 'username email');
     if (!article) return res.status(404).json({ msg: 'Article not found' });
     res.json(article);
   } catch (err) {
@@ -62,6 +62,63 @@ router.put('/:id', [auth, admin], async (req, res) => {
     if (!article) return res.status(404).json({ msg: 'Article not found' });
     const updated = await Article.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
     res.json(updated);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Increment view count (Public)
+router.put('/:id/view', async (req, res) => {
+  try {
+    const article = await Article.findById(req.params.id);
+    if (!article) return res.status(404).json({ msg: 'Article not found' });
+    article.views = (article.views || 0) + 1;
+    await article.save();
+    res.json({ views: article.views });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Toggle Like (Auth required)
+router.put('/:id/like', auth, async (req, res) => {
+  try {
+    const article = await Article.findById(req.params.id);
+    if (!article) return res.status(404).json({ msg: 'Article not found' });
+
+    const index = article.likes.indexOf(req.user.id);
+    if (index === -1) {
+      article.likes.push(req.user.id);
+    } else {
+      article.likes.splice(index, 1);
+    }
+    await article.save();
+    res.json(article.likes);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Add Comment (Auth required)
+router.post('/:id/comment', auth, async (req, res) => {
+  try {
+    const article = await Article.findById(req.params.id);
+    if (!article) return res.status(404).json({ msg: 'Article not found' });
+
+    const newComment = {
+      user: req.user.id,
+      text: req.body.text
+    };
+
+    article.comments.push(newComment);
+    await article.save();
+
+    // Populate user info before returning
+    await article.populate('comments.user', 'username email');
+    res.json(article.comments);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
