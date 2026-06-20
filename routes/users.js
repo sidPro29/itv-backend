@@ -60,19 +60,19 @@ router.put('/:id', auth, async (req, res) => {
     if (email) userFields.email = email;
     if (mobile !== undefined) userFields.mobile = mobile;
     
+    let user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
     // Only admins can update role or activePlans
     if (isAdmin) {
       if (activePlans) userFields.activePlans = activePlans;
       if (role) {
-        if (role === 'superAdmin') {
+        if (role === 'superAdmin' && user.role !== 'superAdmin') {
           return res.status(403).json({ msg: 'Cannot promote user to superAdmin' });
         }
         userFields.role = role;
       }
     }
-
-    let user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ msg: 'User not found' });
 
     user = await User.findByIdAndUpdate(
       req.params.id,
