@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Purchase = require('../models/Purchase');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
+const superAdmin = require('../middleware/superAdmin');
 
 // Get current logged-in user profile
 router.get('/me', auth, async (req, res) => {
@@ -62,7 +63,12 @@ router.put('/:id', auth, async (req, res) => {
     // Only admins can update role or activePlans
     if (isAdmin) {
       if (activePlans) userFields.activePlans = activePlans;
-      if (role) userFields.role = role;
+      if (role) {
+        if (role === 'superAdmin') {
+          return res.status(403).json({ msg: 'Cannot promote user to superAdmin' });
+        }
+        userFields.role = role;
+      }
     }
 
     let user = await User.findById(req.params.id);
@@ -78,6 +84,30 @@ router.put('/:id', auth, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Delete user (SuperAdmin only)
+router.delete('/:id', [auth, superAdmin], async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    // Prevent superAdmins from deleting themselves
+    if (user._id.toString() === req.user.id) {
+      return res.status(400).json({ msg: 'You cannot delete yourself' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ msg: 'User removed successfully' });
+  } catch (err) {
+    console.error(err.message);
+    if (err.kind === 'ObjectId') {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+    res.status(500).send('Server Error');
   }
 });
 
