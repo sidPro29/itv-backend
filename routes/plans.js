@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Purchase = require('../models/Purchase');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
+const superAdmin = require('../middleware/superAdmin');
 
 // Get all plans
 router.get('/', async (req, res) => {
@@ -18,7 +19,7 @@ router.get('/', async (req, res) => {
 });
 
 // Create plan (Admin only)
-router.post('/', [auth, admin], async (req, res) => {
+router.post('/', [auth, superAdmin], async (req, res) => {
   try {
     const newPlan = new Plan(req.body);
     const plan = await newPlan.save();
@@ -30,7 +31,7 @@ router.post('/', [auth, admin], async (req, res) => {
 });
 
 // Update plan (Admin only)
-router.put('/:id', [auth, admin], async (req, res) => {
+router.put('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const plan = await Plan.findById(req.params.id);
     if (!plan) return res.status(404).json({ msg: 'Plan not found' });
@@ -43,7 +44,7 @@ router.put('/:id', [auth, admin], async (req, res) => {
 });
 
 // Delete plan (Admin only)
-router.delete('/:id', [auth, admin], async (req, res) => {
+router.delete('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const plan = await Plan.findById(req.params.id);
     if (!plan) return res.status(404).json({ msg: 'Plan not found' });

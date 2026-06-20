@@ -14,6 +14,8 @@ const UserSchema = new mongoose.Schema({
     expiryDate: Date
   }],
   lastDevice: { type: String, enum: ['android', 'ios', 'web', 'tv'], default: 'web' },
+  tempPasswordExpiresAt: { type: Date },
+  mustChangePassword: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 

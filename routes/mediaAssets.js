@@ -5,6 +5,7 @@ const MediaAsset = require('../models/MediaAsset');
 const SvpCache = require('../models/SvpCache');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
+const superAdmin = require('../middleware/superAdmin');
 
 // SVP Helpers & Caching
 let cachedToken = null;
@@ -226,7 +227,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create media asset (Admin only)
-router.post('/', [auth, admin], async (req, res) => {
+router.post('/', [auth, superAdmin], async (req, res) => {
   try {
     const newAsset = new MediaAsset(req.body);
     const asset = await newAsset.save();
@@ -238,7 +239,7 @@ router.post('/', [auth, admin], async (req, res) => {
 });
 
 // Delete media asset (Admin only)
-router.delete('/:id', [auth, admin], async (req, res) => {
+router.delete('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const asset = await MediaAsset.findById(req.params.id);
     if (!asset) return res.status(404).json({ msg: 'Media Asset not found' });
@@ -251,7 +252,7 @@ router.delete('/:id', [auth, admin], async (req, res) => {
 });
 
 // Update media asset (Admin only)
-router.put('/:id', [auth, admin], async (req, res) => {
+router.put('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const asset = await MediaAsset.findById(req.params.id);
     if (!asset) return res.status(404).json({ msg: 'Media Asset not found' });

@@ -5,6 +5,7 @@ const MediaAssetSchema = new mongoose.Schema({
   type: { type: String, enum: ['video', 'tvshow', 'movie', 'episode', 'movies', 'tvshows'], required: true },
   title: { type: String, required: true, trim: true },
   subtitle: { type: String },
+  rating: { type: String, default: '3+ U/A' },
   description: { type: String, required: true },
   images: [{ type: String }],
   views: { type: Number, default: 0 },

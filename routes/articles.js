@@ -3,6 +3,7 @@ const router = express.Router();
 const Article = require('../models/Article');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
+const superAdmin = require('../middleware/superAdmin');
 
 // Get all articles
 router.get('/', async (req, res) => {
@@ -31,7 +32,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create article (Admin only)
-router.post('/', [auth, admin], async (req, res) => {
+router.post('/', [auth, superAdmin], async (req, res) => {
   try {
     const newArticle = new Article(req.body);
     const article = await newArticle.save();
@@ -43,7 +44,7 @@ router.post('/', [auth, admin], async (req, res) => {
 });
 
 // Delete article (Admin only)
-router.delete('/:id', [auth, admin], async (req, res) => {
+router.delete('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ msg: 'Article not found' });
@@ -56,7 +57,7 @@ router.delete('/:id', [auth, admin], async (req, res) => {
 });
 
 // Update article (Admin only)
-router.put('/:id', [auth, admin], async (req, res) => {
+router.put('/:id', [auth, superAdmin], async (req, res) => {
   try {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ msg: 'Article not found' });

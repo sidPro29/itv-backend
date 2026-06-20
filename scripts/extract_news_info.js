@@ -5,7 +5,7 @@ const Article = require('../models/Article');
 
 function decodeHtml(text) {
   if (!text) return text;
-  return cheerio.load(`<div>${text}</div>`)('div').text();
+  return cheerio.load(text).root().text();
 }
 
 async function run() {

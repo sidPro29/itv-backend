@@ -26,6 +26,7 @@ app.use('/api/media-assets', require('./routes/mediaAssets'));
 app.use('/api/plans', require('./routes/plans'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin/cms-users', require('./routes/adminCmsUsers'));
 
 
 app.get('/', (req, res) => {
