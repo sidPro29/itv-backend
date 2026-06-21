@@ -46,7 +46,9 @@ router.post('/signup', async (req, res) => {
     const payload = {
       user: {
         id: user.id,
-        role: user.role
+        role: user.role,
+        email: user.email,
+        username: user.username
       }
     };
 
@@ -164,7 +166,9 @@ router.post('/verify-2fa', async (req, res) => {
     const payload = {
       user: {
         id: user.id,
-        role: user.role
+        role: user.role,
+        email: user.email,
+        username: user.username
       }
     };
 
