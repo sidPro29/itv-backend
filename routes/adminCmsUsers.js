@@ -86,8 +86,8 @@ router.post('/invite', [auth, superAdmin], async (req, res) => {
                   <p style="margin: 10px 0 0 0; font-size: 28px; font-weight: bold; color: #111111; letter-spacing: 3px; text-align: center;">${plainPassword}</p>
                 </div>
                 
-                <p style="color: #dc3545; font-size: 14px; text-align: center; background: #fff3f3; padding: 10px; border-radius: 4px;">
-                  <strong>⚠️ Important:</strong> This password is valid for <strong>24 hours</strong>. Please log in and change your password immediately.
+                <p style="color: #666666; font-size: 14px; text-align: center; margin-top: 20px; padding: 0 15px;">
+                  <em>For security purposes, this temporary password will expire in <strong>24 hours</strong>. You will be prompted to create a new secure password upon your first login.</em>
                 </p>
                 
                 <div style="text-align: center; margin-top: 35px; margin-bottom: 10px;">
