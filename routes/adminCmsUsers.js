@@ -69,10 +69,39 @@ router.post('/invite', [auth, superAdmin], async (req, res) => {
       if (process.env.SMTP_HOST && process.env.SMTP_USER) {
         const transporter = createTransporter();
         const mailOptions = {
-          from: `"iTV Admin" <${process.env.SMTP_USER}>`,
+          from: `"Interplanetary" <${process.env.SMTP_USER}>`,
           to: email,
-          subject: 'Invitation to join iTV CMS',
-          text: `You have been invited to join the iTV CMS as an Admin.\n\nYour temporary password is: ${plainPassword}\n\nThis password is valid for 24 hours. You must log in and change your password within this time.`
+          subject: 'Invitation to join Interplanetary CMS',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 10px; background-color: #fafafa;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <h1 style="color: #1a1a1a; margin: 0; letter-spacing: 1px;">INTERPLANETARY</h1>
+              </div>
+              <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; border: 1px solid #eeeeee;">
+                <h2 style="color: #333333; margin-top: 0; text-align: center;">Welcome to the CMS!</h2>
+                <p style="color: #555555; font-size: 16px; line-height: 1.6;">You have been invited to join the Interplanetary Content Management System as an Admin.</p>
+                
+                <div style="background-color: #f8f9fa; border-left: 4px solid #0056b3; padding: 15px; margin: 25px 0; border-radius: 4px;">
+                  <p style="margin: 0; font-size: 14px; color: #666666; text-transform: uppercase; font-weight: bold;">Your Temporary Password</p>
+                  <p style="margin: 10px 0 0 0; font-size: 28px; font-weight: bold; color: #111111; letter-spacing: 3px; text-align: center;">${plainPassword}</p>
+                </div>
+                
+                <p style="color: #dc3545; font-size: 14px; text-align: center; background: #fff3f3; padding: 10px; border-radius: 4px;">
+                  <strong>⚠️ Important:</strong> This password is valid for <strong>24 hours</strong>. Please log in and change your password immediately.
+                </p>
+                
+                <div style="text-align: center; margin-top: 35px; margin-bottom: 10px;">
+                  <a href="http://localhost:5174/" style="background-color: #0056b3; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 6px; font-size: 16px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Login to CMS</a>
+                </div>
+                <p style="text-align: center; font-size: 12px; color: #999;">(In production, this button will link to your live CMS domain)</p>
+              </div>
+              
+              <div style="text-align: center; margin-top: 25px; color: #888888; font-size: 12px; line-height: 1.5;">
+                &copy; ${new Date().getFullYear()} Interplanetary. All rights reserved.<br/>
+                This is an automated message, please do not reply.
+              </div>
+            </div>
+          `
         };
         await transporter.sendMail(mailOptions);
         console.log(`Invitation sent to ${email}`);
