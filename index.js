@@ -27,6 +27,7 @@ app.use('/api/plans', require('./routes/plans'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/admin/cms-users', require('./routes/adminCmsUsers'));
+app.use('/api', require('./routes/upload'));
 
 
 app.get('/', (req, res) => {
