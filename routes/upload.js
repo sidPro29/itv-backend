@@ -90,4 +90,27 @@ router.get('/images', (req, res) => {
   }
 });
 
+// DELETE /api/images/:filename - Delete an image safely
+router.delete('/images/:filename', (req, res) => {
+  try {
+    const filename = req.params.filename;
+    // Prevent directory traversal attacks!
+    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+      return res.status(400).json({ message: 'Invalid filename' });
+    }
+    
+    const filePath = path.join(__dirname, '../uploads', filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return res.json({ success: true, message: 'Image deleted successfully' });
+    } else {
+      return res.status(404).json({ message: 'Image not found' });
+    }
+  } catch (error) {
+    console.error('Delete image error:', error);
+    res.status(500).json({ message: 'Failed to delete image' });
+  }
+});
+
 module.exports = router;
+
