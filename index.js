@@ -11,6 +11,17 @@ const PORT = process.env.PORT || 5000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Request logger middleware for tracing performance/duration
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[HTTP] ${req.method} ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
 app.use('/uploads', express.static('/app/uploads', { maxAge: '30d' }));
 app.use('/api/uploads', express.static('/app/uploads', { maxAge: '30d' }));
 
