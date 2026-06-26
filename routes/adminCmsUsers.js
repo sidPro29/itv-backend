@@ -6,6 +6,7 @@ const nodemailer = require('nodemailer');
 const User = require('../models/User');
 const auth = require('../middleware/auth');
 const superAdmin = require('../middleware/superAdmin');
+const { logActivity } = require('../utils/logger');
 
 // Set up Nodemailer transporter
 const createTransporter = () => {
@@ -63,6 +64,7 @@ router.post('/invite', [auth, superAdmin], async (req, res) => {
     user.password = await bcrypt.hash(plainPassword, salt);
 
     await user.save();
+    await logActivity(req, 'CREATE', 'User', `Invited CMS Admin: "${email}"`);
 
     // Send Email
     try {
@@ -143,7 +145,7 @@ router.delete('/:id', [auth, superAdmin], async (req, res) => {
     }
 
     await User.findByIdAndDelete(req.params.id);
-    
+    await logActivity(req, 'DELETE', 'User', `Deleted CMS Admin: "${user.username || user.email}"`);
     res.json({ msg: 'CMS user removed' });
   } catch (err) {
     console.error(err.message);

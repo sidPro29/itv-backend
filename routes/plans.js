@@ -6,6 +6,7 @@ const Purchase = require('../models/Purchase');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
 const superAdmin = require('../middleware/superAdmin');
+const { logActivity } = require('../utils/logger');
 
 // Get all plans
 router.get('/', async (req, res) => {
@@ -23,6 +24,7 @@ router.post('/', [auth, superAdmin], async (req, res) => {
   try {
     const newPlan = new Plan(req.body);
     const plan = await newPlan.save();
+    await logActivity(req, 'CREATE', 'Plan', `Created plan: "${plan.name}" (Amount: €${plan.amount})`);
     res.json(plan);
   } catch (err) {
     console.error(err.message);
@@ -36,6 +38,7 @@ router.put('/:id', [auth, superAdmin], async (req, res) => {
     const plan = await Plan.findById(req.params.id);
     if (!plan) return res.status(404).json({ msg: 'Plan not found' });
     const updated = await Plan.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    await logActivity(req, 'UPDATE', 'Plan', `Updated plan: "${updated.name}"`);
     res.json(updated);
   } catch (err) {
     console.error(err.message);
@@ -49,6 +52,7 @@ router.delete('/:id', [auth, superAdmin], async (req, res) => {
     const plan = await Plan.findById(req.params.id);
     if (!plan) return res.status(404).json({ msg: 'Plan not found' });
     await plan.deleteOne();
+    await logActivity(req, 'DELETE', 'Plan', `Deleted plan: "${plan.name}"`);
     res.json({ msg: 'Plan removed' });
   } catch (err) {
     console.error(err.message);

@@ -71,12 +71,16 @@ router.post('/signup', async (req, res) => {
 // @desc    Authenticate user & get token
 // @access  Public
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, isCms } = req.body;
 
   try {
     let user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid Credentials' });
+    }
+
+    if (isCms && user.role !== 'admin' && user.role !== 'superAdmin') {
+      return res.status(403).json({ msg: 'Access denied. You do not have permission to access the CMS.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -137,7 +141,7 @@ router.post('/login', async (req, res) => {
 // @desc    Verify 2FA code and get token
 // @access  Public
 router.post('/verify-2fa', async (req, res) => {
-  const { email, code } = req.body;
+  const { email, code, isCms } = req.body;
 
   if (!email || !code) {
     return res.status(400).json({ msg: 'Email and code are required' });
@@ -147,6 +151,10 @@ router.post('/verify-2fa', async (req, res) => {
     let user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid request' });
+    }
+
+    if (isCms && user.role !== 'admin' && user.role !== 'superAdmin') {
+      return res.status(403).json({ msg: 'Access denied. You do not have permission to access the CMS.' });
     }
 
     if (!user.twoFactorCode || user.twoFactorCode !== code) {
@@ -161,6 +169,18 @@ router.post('/verify-2fa', async (req, res) => {
     user.twoFactorCode = undefined;
     user.twoFactorCodeExpires = undefined;
     await user.save();
+
+    if (isCms) {
+      const ActivityLog = require('../models/ActivityLog');
+      const log = new ActivityLog({
+        user: user._id,
+        username: user.username || user.email,
+        action: 'LOGIN',
+        collectionName: 'User',
+        details: 'Logged into CMS dashboard'
+      });
+      await log.save().catch(e => console.error('Error logging CMS login:', e));
+    }
 
     // Generate JWT
     const payload = {

@@ -5,6 +5,7 @@ const Purchase = require('../models/Purchase');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
 const superAdmin = require('../middleware/superAdmin');
+const { logActivity } = require('../utils/logger');
 
 // Get current logged-in user profile
 router.get('/me', auth, async (req, res) => {
@@ -80,6 +81,7 @@ router.put('/:id', auth, async (req, res) => {
       { new: true }
     ).select('-password');
 
+    await logActivity(req, 'UPDATE', 'User', `Updated user profile: "${user.username || user.email}" (Role: ${user.role})`);
     res.json(user);
   } catch (err) {
     console.error(err.message);
@@ -101,6 +103,7 @@ router.delete('/:id', [auth, superAdmin], async (req, res) => {
     }
 
     await User.findByIdAndDelete(req.params.id);
+    await logActivity(req, 'DELETE', 'User', `Deleted user account: "${user.username || user.email}"`);
     res.json({ msg: 'User removed successfully' });
   } catch (err) {
     console.error(err.message);

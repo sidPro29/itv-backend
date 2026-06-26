@@ -4,6 +4,7 @@ const Article = require('../models/Article');
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
 const superAdmin = require('../middleware/superAdmin');
+const { logActivity } = require('../utils/logger');
 
 // Get all articles
 router.get('/', async (req, res) => {
@@ -36,6 +37,7 @@ router.post('/', [auth, superAdmin], async (req, res) => {
   try {
     const newArticle = new Article(req.body);
     const article = await newArticle.save();
+    await logActivity(req, 'CREATE', 'Article', `Created article: "${article.title}"`);
     res.json(article);
   } catch (err) {
     console.error(err.message);
@@ -49,6 +51,7 @@ router.delete('/:id', [auth, superAdmin], async (req, res) => {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ msg: 'Article not found' });
     await article.deleteOne();
+    await logActivity(req, 'DELETE', 'Article', `Deleted article: "${article.title}"`);
     res.json({ msg: 'Article removed' });
   } catch (err) {
     console.error(err.message);
@@ -62,6 +65,7 @@ router.put('/:id', [auth, superAdmin], async (req, res) => {
     const article = await Article.findById(req.params.id);
     if (!article) return res.status(404).json({ msg: 'Article not found' });
     const updated = await Article.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    await logActivity(req, 'UPDATE', 'Article', `Updated article: "${updated.title}"`);
     res.json(updated);
   } catch (err) {
     console.error(err.message);
