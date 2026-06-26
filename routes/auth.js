@@ -175,7 +175,7 @@ router.post('/verify-2fa', async (req, res) => {
     jwt.sign(
       payload,
       process.env.JWT_SECRET,
-      { expiresIn: '10h' },
+      { expiresIn: '7d' },
       (err, token) => {
         if (err) throw err;
         res.json({ 
