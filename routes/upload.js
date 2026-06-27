@@ -52,6 +52,50 @@ router.post('/upload', upload.single('image'), (req, res) => {
   }
 });
 
+const apkStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, '../uploads/apks');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const uploadApk = multer({ 
+  storage: apkStorage,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext !== '.apk' && file.mimetype !== 'application/vnd.android.package-archive') {
+      return cb(new Error('Only APK files are allowed!'), false);
+    }
+    cb(null, true);
+  }
+});
+
+// POST /api/upload/apk - Upload a new APK
+router.post('/upload/apk', uploadApk.single('apk'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No APK file provided' });
+    }
+    const url = `/api/uploads/apks/${req.file.filename}`;
+    res.json({ 
+      success: true, 
+      url: url,
+      filename: req.file.filename 
+    });
+  } catch (error) {
+    console.error('Upload APK error:', error);
+    res.status(500).json({ message: 'Failed to upload APK' });
+  }
+});
+
 // GET /api/images - List all uploaded images
 router.get('/images', (req, res) => {
   try {

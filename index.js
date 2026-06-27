@@ -45,6 +45,7 @@ app.use('/api/admin/cms-users', require('./routes/adminCmsUsers'));
 app.use('/api', require('./routes/upload'));
 app.use('/api/pages', require('./routes/pages'));
 app.use('/api/logs', require('./routes/logs'));
+app.use('/api/apks', require('./routes/apks'));
 
 
 app.get('/', (req, res) => {
