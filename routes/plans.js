@@ -152,4 +152,52 @@ router.post('/purchase', auth, async (req, res) => {
   }
 });
 
+// @route   POST api/plans/confirm-purchase
+// @desc    Record external/mobile Stripe purchase & update user plan
+// @access  Private
+router.post('/confirm-purchase', auth, async (req, res) => {
+  const { planId, paymentIntentId } = req.body;
+
+  try {
+    const plan = await Plan.findById(planId);
+    if (!plan) return res.status(404).json({ msg: 'Plan not found' });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    // Create Purchase document
+    const purchase = new Purchase({
+      userId: user._id,
+      planId: plan._id,
+      stripePaymentIntentId: paymentIntentId || ('pi_external_' + Math.random().toString(36).substring(2, 11) + Date.now()),
+      amount: plan.amount,
+      currency: plan.currency || 'EUR',
+      status: 'succeeded',
+      purchaseDate: new Date()
+    });
+    await purchase.save();
+
+    // Update User profile
+    const expiryDate = new Date();
+    if (plan.billingCycle === 'Yearly') {
+      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+    } else {
+      expiryDate.setMonth(expiryDate.getMonth() + 1);
+    }
+
+    user.activePlans = [{
+      planName: plan.name,
+      planId: plan._id,
+      expiryDate
+    }];
+    await user.save();
+
+    const updatedUser = await User.findById(user._id).select('-password');
+    res.json(updatedUser);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
 module.exports = router;

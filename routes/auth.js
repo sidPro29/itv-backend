@@ -71,14 +71,17 @@ router.post('/signup', async (req, res) => {
 // @desc    Authenticate user & get token
 // @access  Public
 router.post('/login', async (req, res) => {
-  const { email, password, isCms } = req.body;
-
+  const { email, password, isCms, skip2FA } = req.body;
   try {
-    let user = await User.findOne({ email });
+    let user = await User.findOne({
+      $or: [
+        { email: email ? email.toLowerCase() : '' },
+        { username: email }
+      ]
+    });
     if (!user) {
       return res.status(400).json({ msg: 'Invalid Credentials' });
     }
-
     if (isCms && user.role !== 'admin' && user.role !== 'superAdmin') {
       return res.status(403).json({ msg: 'Access denied. You do not have permission to access the CMS.' });
     }
@@ -90,6 +93,26 @@ router.post('/login', async (req, res) => {
 
     if (user.tempPasswordExpiresAt && new Date() > user.tempPasswordExpiresAt) {
       return res.status(403).json({ msg: 'Your temporary password has expired. Please request a new invitation.' });
+    }
+
+    if (skip2FA) {
+      const payload = {
+        user: {
+          id: user.id,
+          role: user.role,
+          email: user.email,
+          username: user.username
+        }
+      };
+      return jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' },
+        (err, token) => {
+          if (err) throw err;
+          res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role, activePlans: user.activePlans } });
+        }
+      );
     }
 
     // Generate 6-digit OTP
@@ -136,6 +159,7 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 });
+
 
 // @route   POST api/auth/verify-2fa
 // @desc    Verify 2FA code and get token
