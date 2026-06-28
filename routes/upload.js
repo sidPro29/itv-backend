@@ -68,21 +68,14 @@ const apkStorage = multer.diskStorage({
 
 const uploadApk = multer({ 
   storage: apkStorage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB limit
-  fileFilter: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ext !== '.apk' && file.mimetype !== 'application/vnd.android.package-archive') {
-      return cb(new Error('Only APK files are allowed!'), false);
-    }
-    cb(null, true);
-  }
+  limits: { fileSize: 500 * 1024 * 1024 } // 500MB limit
 });
 
-// POST /api/upload/apk - Upload a new APK
+// POST /api/upload/apk - Upload a new APK / package file
 router.post('/upload/apk', uploadApk.single('apk'), (req, res) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ message: 'No APK file provided' });
+      return res.status(400).json({ message: 'No file provided' });
     }
     const url = `/api/uploads/apks/${req.file.filename}`;
     res.json({ 
@@ -91,8 +84,8 @@ router.post('/upload/apk', uploadApk.single('apk'), (req, res) => {
       filename: req.file.filename 
     });
   } catch (error) {
-    console.error('Upload APK error:', error);
-    res.status(500).json({ message: 'Failed to upload APK' });
+    console.error('Upload file error:', error);
+    res.status(500).json({ message: 'Failed to upload file' });
   }
 });
 
