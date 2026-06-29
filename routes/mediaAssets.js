@@ -50,7 +50,7 @@ async function getSvpToken() {
   }
 
   cachedToken = token;
-  tokenExpiresAt = now + 24 * 60 * 60 * 1000; // 24 hours cache
+  tokenExpiresAt = now + 15 * 60 * 1000; // 15 minutes cache
   return token;
 }
 
@@ -140,18 +140,29 @@ router.get('/playback/:clipId', async (req, res) => {
       return res.status(404).json({ msg: 'Video not found in catalog' });
     }
 
-    const token = await getSvpToken();
-    const hlsUrl = `https://www.streamingvideoprovider.com/?l=api&token=${token}&a=svp_get_hls_url&video_ref=${refNo}`;
-    const hlsRes = await fetchUrl(hlsUrl);
+    let token = await getSvpToken();
+    let hlsUrl = `https://www.streamingvideoprovider.com/?l=api&token=${token}&a=svp_get_hls_url&video_ref=${refNo}`;
+    let hlsRes = await fetchUrl(hlsUrl);
 
-    const matchUrl = hlsRes.data.match(/<video_url>(.*?)<\/video_url>/);
+    let matchUrl = hlsRes.data.match(/<video_url>(.*?)<\/video_url>/);
+    if (!matchUrl || !matchUrl[1]) {
+      // Token might be expired on SVP side. Clear cache, get new token and retry once.
+      console.warn('SVP HLS response error, retrying with a fresh token...', hlsRes.data);
+      cachedToken = null;
+      tokenExpiresAt = null;
+      token = await getSvpToken();
+      hlsUrl = `https://www.streamingvideoprovider.com/?l=api&token=${token}&a=svp_get_hls_url&video_ref=${refNo}`;
+      hlsRes = await fetchUrl(hlsUrl);
+      matchUrl = hlsRes.data.match(/<video_url>(.*?)<\/video_url>/);
+    }
+
     if (matchUrl && matchUrl[1]) {
       if (req.query.format === 'json') {
         return res.json({ url: matchUrl[1] });
       }
       return res.redirect(302, matchUrl[1]);
     } else {
-      console.error('SVP HLS response error:', hlsRes.data);
+      console.error('SVP HLS response error (after retry):', hlsRes.data);
       return res.status(500).json({ msg: 'Failed to retrieve stream URL from provider' });
     }
   } catch (err) {
