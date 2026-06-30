@@ -45,7 +45,7 @@ services:
     container_name: itv_filebrowser
     restart: always
     user: "0:0"
-    command: -c "" --baseURL /filemanager -d /database/filebrowser.db
+    command: -c "" --baseURL /filemanager --address 0.0.0.0 --port 80 -d /database/filebrowser.db
     volumes:
       - /opt/itv-deploy:/srv
       - uploads_data:/srv/backend/uploads
