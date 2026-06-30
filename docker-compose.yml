@@ -45,7 +45,9 @@ services:
     container_name: itv_filebrowser
     restart: always
     user: "0:0"
-    command: -b /filemanager -d /database/filebrowser.db
+    environment:
+      - FB_BASEURL=/filemanager
+      - FB_DATABASE=/database/filebrowser.db
     volumes:
       - /opt/itv-deploy:/srv
       - uploads_data:/srv/backend/uploads
