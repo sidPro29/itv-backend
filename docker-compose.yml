@@ -36,6 +36,7 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./web/dist:/usr/share/nginx/html/web:ro
       - ./cms/dist:/usr/share/nginx/html/cms:ro
+      - ./subdomains:/usr/share/nginx/html/subdomains:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - backend
