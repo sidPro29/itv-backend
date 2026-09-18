@@ -239,7 +239,7 @@ router.post('/verify-2fa', async (req, res) => {
 // @desc    Send OTP to user email for password reset
 // @access  Public
 router.post('/forgot-password', async (req, res) => {
-  const { email } = req.body;
+  const { email } = req.body || {};
 
   if (!email) {
     return res.status(400).json({ msg: 'Email is required' });
@@ -298,7 +298,7 @@ router.post('/forgot-password', async (req, res) => {
 // @desc    Verify OTP and set new password
 // @access  Public
 router.post('/reset-password', async (req, res) => {
-  const { email, code, newPassword } = req.body;
+  const { email, code, newPassword } = req.body || {};
 
   if (!email || !code || !newPassword) {
     return res.status(400).json({ msg: 'Email, verification code, and new password are required' });
