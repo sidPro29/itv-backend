@@ -64,28 +64,33 @@ router.put('/:id', auth, async (req, res) => {
     let user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ msg: 'User not found' });
 
+    if (username) user.username = username;
+    if (email) user.email = email;
+    if (mobile !== undefined) user.mobile = mobile;
+
     // Only admins can update role or activePlans
     if (isAdmin) {
-      if (activePlans) userFields.activePlans = activePlans;
+      if (activePlans && Array.isArray(activePlans)) {
+        user.activePlans = activePlans;
+        user.markModified('activePlans');
+      }
       if (role) {
-        if (role === 'superAdmin' && user.role !== 'superAdmin') {
-          return res.status(403).json({ msg: 'Cannot promote user to superAdmin' });
+        // Only superAdmins can promote someone to superAdmin
+        if (role === 'superAdmin' && user.role !== 'superAdmin' && req.user.role !== 'superAdmin') {
+          return res.status(403).json({ msg: 'Only SuperAdmin can promote users to superAdmin' });
         }
-        userFields.role = role;
+        user.role = role;
       }
     }
 
-    user = await User.findByIdAndUpdate(
-      req.params.id,
-      { $set: userFields },
-      { new: true }
-    ).select('-password');
+    await user.save();
+    const updatedUser = await User.findById(user._id).select('-password');
 
-    await logActivity(req, 'UPDATE', 'User', `Updated user profile: "${user.username || user.email}" (Role: ${user.role})`);
-    res.json(user);
+    await logActivity(req, 'UPDATE', 'User', `Updated user profile: "${updatedUser.username || updatedUser.email}" (Role: ${updatedUser.role})`);
+    res.json(updatedUser);
   } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ msg: 'Server error' });
+    console.error('Error updating user:', err);
+    res.status(500).json({ msg: 'Server error: ' + err.message });
   }
 });
 
