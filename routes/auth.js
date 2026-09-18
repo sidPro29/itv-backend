@@ -235,7 +235,107 @@ router.post('/verify-2fa', async (req, res) => {
   }
 });
 
-module.exports = router;
+// @route   POST api/auth/forgot-password
+// @desc    Send OTP to user email for password reset
+// @access  Public
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ msg: 'Email is required' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ msg: 'No account found with this email address' });
+    }
+
+    // Generate 6-digit OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    user.resetPasswordOTP = otpCode;
+    user.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await user.save();
+
+    // Send OTP via email
+    try {
+      if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+        const transporter = createTransporter();
+        const mailOptions = {
+          from: `"Interplanetary" <${process.env.SMTP_USER}>`,
+          to: user.email,
+          subject: 'Password Reset Verification Code',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
+              <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
+              <p style="color: #555; text-align: center;">You requested to reset your password. Use the verification code below. It expires in 10 minutes.</p>
+              <div style="background: #f8f9fa; border-left: 4px solid #e74c3c; padding: 20px; text-align: center; margin: 20px 0;">
+                <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #111;">${otpCode}</span>
+              </div>
+              <p style="color: #888; font-size: 0.85rem; text-align: center;">If you did not request this, please ignore this email.</p>
+            </div>
+          `
+        };
+        await transporter.sendMail(mailOptions);
+        console.log(`Password reset OTP sent to ${user.email}`);
+      } else {
+        console.log(`[Email Simulation] Password Reset OTP for ${user.email}: ${otpCode}`);
+      }
+    } catch (emailErr) {
+      console.error('Error sending reset password email:', emailErr);
+      return res.status(500).json({ msg: 'Error sending verification email. Please try again later.' });
+    }
+
+    res.json({ msg: 'Password reset verification code has been sent to your email.' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   POST api/auth/reset-password
+// @desc    Verify OTP and set new password
+// @access  Public
+router.post('/reset-password', async (req, res) => {
+  const { email, code, newPassword } = req.body;
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ msg: 'Email, verification code, and new password are required' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ msg: 'Password must be at least 6 characters long' });
+  }
+
+  try {
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(400).json({ msg: 'Invalid request' });
+    }
+
+    if (!user.resetPasswordOTP || user.resetPasswordOTP !== code) {
+      return res.status(400).json({ msg: 'Invalid verification code' });
+    }
+
+    if (user.resetPasswordExpires && new Date() > user.resetPasswordExpires) {
+      return res.status(400).json({ msg: 'Verification code has expired. Please request a new code.' });
+    }
+
+    // OTP is valid. Update password.
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+
+    user.resetPasswordOTP = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ msg: 'Password reset successfully! You can now log in with your new password.' });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
 
 // @route   POST api/auth/force-change-password
 // @desc    Force user to change password on first login
@@ -273,3 +373,5 @@ router.post('/force-change-password', authMiddleware, async (req, res) => {
     res.status(500).send('Server Error');
   }
 });
+
+module.exports = router;

@@ -18,7 +18,10 @@ const UserSchema = new mongoose.Schema({
   mustChangePassword: { type: Boolean, default: false },
   twoFactorCode: { type: String },
   twoFactorCodeExpires: { type: Date },
+  resetPasswordOTP: { type: String },
+  resetPasswordExpires: { type: Date },
   createdAt: { type: Date, default: Date.now }
 });
+
 
 module.exports = mongoose.model('User', UserSchema);
