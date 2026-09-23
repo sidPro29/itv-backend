@@ -99,10 +99,11 @@ router.post('/purchase', auth, async (req, res) => {
       }
     }
 
-    // Stripe processing (mock if STRIPE_SECRET_KEY is not defined)
+    // Stripe processing (mock if STRIPE_SECRET_KEY is not defined or is dummy placeholder)
     let paymentId = 'pi_mock_' + Math.random().toString(36).substring(2, 11) + Date.now();
-    if (process.env.STRIPE_SECRET_KEY) {
-      const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    const stripeKey = process.env.STRIPE_SECRET_KEY;
+    if (stripeKey && stripeKey.startsWith('sk_')) {
+      const stripe = require('stripe')(stripeKey);
       try {
         const charge = await stripe.charges.create({
           amount: Math.round(plan.amount * 100),
@@ -115,6 +116,8 @@ router.post('/purchase', auth, async (req, res) => {
         console.error("Stripe Charge Error:", err);
         return res.status(400).json({ msg: `Payment failed: ${err.message}` });
       }
+    } else {
+      console.log(`[Stripe] Mocking payment since STRIPE_SECRET_KEY is not set to a valid key starting with 'sk_' (Key: ${stripeKey})`);
     }
 
     // Create Purchase document
