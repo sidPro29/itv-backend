@@ -46,6 +46,8 @@ app.use('/api', require('./routes/upload'));
 app.use('/api/pages', require('./routes/pages'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/apks', require('./routes/apks'));
+app.use('/api/community', require('./routes/community'));
+app.use('/api/admin/community', require('./routes/adminCommunity'));
 
 
 app.get('/', (req, res) => {
