@@ -6,7 +6,9 @@ const auth = require('../middleware/auth');
 
 // Utility helper to check if user has an active ITV Web subscription
 const hasActiveWebSubscription = (user) => {
-  if (!user || !user.activePlans || !Array.isArray(user.activePlans)) return false;
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'superAdmin') return true;
+  if (!user.activePlans || !Array.isArray(user.activePlans)) return false;
   const now = new Date();
   return user.activePlans.some(plan => !plan.expiryDate || new Date(plan.expiryDate) > now);
 };
