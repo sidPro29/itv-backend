@@ -4,6 +4,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+const User = require('../models/User');
+
 // Configure multer for file storage
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -15,9 +17,11 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Generate a unique filename: timestamp + original extension
+    // Generate a unique filename: prefix for community uploads + timestamp + original extension
+    const isCommunity = req.headers['x-upload-source'] === 'community' || req.headers['x-source'] === 'community';
+    const prefix = isCommunity ? 'community_' : '';
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    cb(null, prefix + uniqueSuffix + path.extname(file.originalname));
   }
 });
 
@@ -92,8 +96,8 @@ router.post('/upload/apk', uploadApk.single('apk'), (req, res) => {
   }
 });
 
-// GET /api/images - List all uploaded images
-router.get('/images', (req, res) => {
+// GET /api/images - List all uploaded images (CMS Image Library)
+router.get('/images', async (req, res) => {
   try {
     const uploadDir = path.join(__dirname, '../uploads');
     
@@ -101,22 +105,66 @@ router.get('/images', (req, res) => {
       return res.json({ images: [] });
     }
 
+    // Collect all filenames referenced in community profiles and verification docs to filter them out
+    const communityFilenames = new Set();
+    try {
+      const users = await User.find({}, 'communityProfile verificationDocs');
+      users.forEach(u => {
+        if (u.verificationDocs?.idDocumentUrl) {
+          const fn = path.basename(u.verificationDocs.idDocumentUrl);
+          if (fn) communityFilenames.add(fn);
+        }
+        if (u.communityProfile) {
+          if (u.communityProfile.avatarUrl) {
+            const fn = path.basename(u.communityProfile.avatarUrl);
+            if (fn) communityFilenames.add(fn);
+          }
+          if (u.communityProfile.coverUrl) {
+            const fn = path.basename(u.communityProfile.coverUrl);
+            if (fn) communityFilenames.add(fn);
+          }
+          if (Array.isArray(u.communityProfile.certificates)) {
+            u.communityProfile.certificates.forEach(c => {
+              if (c.credentialUrl) {
+                const fn = path.basename(c.credentialUrl);
+                if (fn) communityFilenames.add(fn);
+              }
+            });
+          }
+        }
+      });
+    } catch (dbErr) {
+      console.warn('DB lookup error for community filenames:', dbErr);
+    }
+
     const files = fs.readdirSync(uploadDir);
     const images = [];
 
     files.forEach(file => {
+      // Exclude files uploaded from community platform or associated with community profiles
+      if (
+        file.startsWith('community_') ||
+        file.startsWith('community-') ||
+        file.startsWith('comm_') ||
+        communityFilenames.has(file)
+      ) {
+        return;
+      }
+
       const ext = path.extname(file).toLowerCase();
       // Filter out non-image files
       if (['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.avif'].includes(ext)) {
         const filePath = path.join(uploadDir, file);
-        const stats = fs.statSync(filePath);
-        
-        images.push({
-          name: file,
-          url: `/api/uploads/${file}`,
-          size: stats.size,
-          createdAt: stats.mtime
-        });
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          const stats = fs.statSync(filePath);
+          
+          images.push({
+            name: file,
+            url: `/api/uploads/${file}`,
+            size: stats.size,
+            createdAt: stats.mtime
+          });
+        }
       }
     });
 
