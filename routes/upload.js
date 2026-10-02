@@ -23,33 +23,36 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
   fileFilter: (req, file, cb) => {
-    // Accept images only
-    if (!file.mimetype.startsWith('image/')) {
-      return cb(new Error('Only image files are allowed!'), false);
+    // Accept images and PDF files
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
+      return cb(null, true);
     }
-    cb(null, true);
+    cb(new Error('Only image files and PDFs are allowed!'), false);
   }
 });
 
-// POST /api/upload - Upload a new image
-router.post('/upload', upload.single('image'), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No image file provided' });
+// POST /api/upload - Upload a new image or document (accepts file or image field)
+router.post('/upload', (req, res) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ message: err.message || 'File upload failed' });
     }
-    // Return the relative URL so it works everywhere
-    const url = `/api/uploads/${req.file.filename}`;
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'No file provided' });
+    }
+    const file = req.files[0];
+    const relativeUrl = `/api/uploads/${file.filename}`;
+    const baseUrl = process.env.BASE_URL || 'https://api.interplanetary.tv';
+    const fullUrl = `${baseUrl}${relativeUrl}`;
     res.json({ 
       success: true, 
-      url: url,
-      filename: req.file.filename 
+      url: fullUrl,
+      relativeUrl: relativeUrl,
+      filename: file.filename 
     });
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ message: 'Failed to upload image' });
-  }
+  });
 });
 
 const apkStorage = multer.diskStorage({
