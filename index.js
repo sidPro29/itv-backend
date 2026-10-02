@@ -50,11 +50,79 @@ app.use('/api/community', require('./routes/community'));
 app.use('/api/admin/community', require('./routes/adminCommunity'));
 
 
+const http = require('http');
+const { Server } = require('socket.io');
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
+
+// Socket.io WebRTC Signaling & Real-time Messaging
+io.on('connection', (socket) => {
+  console.log('[Socket] Connected:', socket.id);
+
+  socket.on('register_user', (userId) => {
+    if (userId) {
+      socket.join(userId.toString());
+      console.log(`[Socket] User ${userId} joined socket room`);
+    }
+  });
+
+  socket.on('send_message', (data) => {
+    if (data && data.recipientId) {
+      io.to(data.recipientId.toString()).emit('receive_message', data);
+    }
+  });
+
+  // WebRTC Signaling Events
+  socket.on('call_user', ({ recipientId, offer, callType, callerInfo }) => {
+    console.log(`[Call] Call initiated to ${recipientId} (${callType})`);
+    io.to(recipientId.toString()).emit('incoming_call', {
+      callerId: callerInfo?.userId,
+      callerName: callerInfo?.fullName,
+      callerAvatar: callerInfo?.avatarUrl,
+      offer,
+      callType
+    });
+  });
+
+  socket.on('answer_call', ({ callerId, answer }) => {
+    console.log(`[Call] Call accepted for ${callerId}`);
+    io.to(callerId.toString()).emit('call_accepted', { answer });
+  });
+
+  socket.on('ice_candidate', ({ targetId, candidate }) => {
+    if (targetId) {
+      io.to(targetId.toString()).emit('ice_candidate', { candidate });
+    }
+  });
+
+  socket.on('reject_call', ({ targetId }) => {
+    if (targetId) {
+      io.to(targetId.toString()).emit('call_rejected');
+    }
+  });
+
+  socket.on('end_call', ({ targetId }) => {
+    if (targetId) {
+      io.to(targetId.toString()).emit('call_ended');
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('[Socket] Disconnected:', socket.id);
+  });
+});
+
 app.get('/', (req, res) => {
   res.send('ITV CMS API is running...');
 });
 
 // Start Server
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
