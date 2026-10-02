@@ -82,6 +82,16 @@ const UserSchema = new mongoose.Schema({
     unlockedMembers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
   },
 
+  blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  notifications: [{
+    title: String,
+    message: String,
+    type: { type: String, enum: ['chat', 'call', 'verification', 'system'], default: 'system' },
+    link: String,
+    read: { type: Boolean, default: false },
+    createdAt: { type: Date, default: Date.now }
+  }],
+
   tempPasswordExpiresAt: { type: Date },
   mustChangePassword: { type: Boolean, default: false },
   twoFactorCode: { type: String },
