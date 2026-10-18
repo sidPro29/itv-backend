@@ -426,10 +426,13 @@ router.post('/messages', auth, async (req, res) => {
       return res.status(403).json({ msg: 'Only verified members can send messages or make calls.' });
     }
 
+    const hasWebPlan = hasActiveWebSubscription(currentUser);
     const tier = currentUser.communitySubscription?.tier || 'free';
-    if (tier === 'free') {
+    const isAdmin = currentUser.role === 'admin' || currentUser.role === 'superAdmin';
+
+    if (!hasWebPlan && tier === 'free' && !isAdmin) {
       return res.status(403).json({ 
-        msg: 'Private messaging and calls require a Community Plan (Basic, Plus, or Pro). Please upgrade to connect.',
+        msg: 'Private messaging and calls require an active ITV plan. Please upgrade to connect.',
         requiresPlanUpgrade: true 
       });
     }
