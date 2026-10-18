@@ -430,9 +430,9 @@ router.post('/messages', auth, async (req, res) => {
     const tier = currentUser.communitySubscription?.tier || 'free';
     const isAdmin = currentUser.role === 'admin' || currentUser.role === 'superAdmin';
 
-    if (!hasWebPlan && tier === 'free' && !isAdmin) {
+    if (!isAdmin && (!hasWebPlan || tier === 'free')) {
       return res.status(403).json({ 
-        msg: 'Private messaging and calls require an active ITV plan. Please upgrade to connect.',
+        msg: 'Private messaging and calls require an active ITV plan and a Community subscription tier. Please upgrade to connect.',
         requiresPlanUpgrade: true 
       });
     }
