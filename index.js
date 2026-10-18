@@ -78,7 +78,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // WebRTC Signaling Events
+  // WebRTC Signaling Events (1-to-1 Legacy compatibility)
   socket.on('call_user', ({ recipientId, offer, callType, callerInfo }) => {
     console.log(`[Call] Call initiated to ${recipientId} (${callType})`);
     io.to(recipientId.toString()).emit('incoming_call', {
@@ -113,8 +113,110 @@ io.on('connection', (socket) => {
     }
   });
 
+  // --- WebRTC Room & Multi-User Call Signaling ---
+  socket.on('call_room_invite', ({ roomId, recipientIds, callerInfo, callType }) => {
+    const list = Array.isArray(recipientIds) ? recipientIds : [recipientIds];
+    console.log(`[CallRoom] Invite to room ${roomId} for:`, list);
+    list.forEach(targetId => {
+      if (targetId) {
+        io.to(targetId.toString()).emit('incoming_call_room', {
+          roomId,
+          callerInfo,
+          callType,
+          allRecipients: list
+        });
+      }
+    });
+  });
+
+  socket.on('join_call_room', ({ roomId, userInfo }) => {
+    if (!roomId) return;
+    socket.join(`call_room_${roomId}`);
+    socket.callRoomId = roomId;
+    socket.callUserInfo = userInfo;
+    console.log(`[CallRoom] User ${userInfo?.userId || socket.id} joined call room ${roomId}`);
+
+    socket.to(`call_room_${roomId}`).emit('user_joined_call_room', {
+      socketId: socket.id,
+      userId: userInfo?.userId,
+      userInfo
+    });
+  });
+
+  socket.on('call_peer_offer', ({ targetSocketId, targetUserId, offer, senderInfo }) => {
+    const payload = {
+      senderSocketId: socket.id,
+      senderUserId: senderInfo?.userId || socket.callUserInfo?.userId,
+      offer,
+      senderInfo: senderInfo || socket.callUserInfo
+    };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('call_peer_offer', payload);
+    } else if (targetUserId) {
+      io.to(targetUserId.toString()).emit('call_peer_offer', payload);
+    }
+  });
+
+  socket.on('call_peer_answer', ({ targetSocketId, targetUserId, answer, senderInfo }) => {
+    const payload = {
+      senderSocketId: socket.id,
+      senderUserId: senderInfo?.userId || socket.callUserInfo?.userId,
+      answer,
+      senderInfo: senderInfo || socket.callUserInfo
+    };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('call_peer_answer', payload);
+    } else if (targetUserId) {
+      io.to(targetUserId.toString()).emit('call_peer_answer', payload);
+    }
+  });
+
+  socket.on('call_peer_ice', ({ targetSocketId, targetUserId, candidate }) => {
+    const payload = {
+      senderSocketId: socket.id,
+      senderUserId: socket.callUserInfo?.userId,
+      candidate
+    };
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('call_peer_ice', payload);
+    } else if (targetUserId) {
+      io.to(targetUserId.toString()).emit('call_peer_ice', payload);
+    }
+  });
+
+  socket.on('call_peer_track_state', ({ roomId, isAudioMuted, isVideoOff, isScreenSharing }) => {
+    const rId = roomId || socket.callRoomId;
+    if (rId) {
+      socket.to(`call_room_${rId}`).emit('call_peer_track_state', {
+        userId: socket.callUserInfo?.userId,
+        socketId: socket.id,
+        isAudioMuted,
+        isVideoOff,
+        isScreenSharing
+      });
+    }
+  });
+
+  socket.on('leave_call_room', ({ roomId }) => {
+    const rId = roomId || socket.callRoomId;
+    if (rId) {
+      socket.leave(`call_room_${rId}`);
+      socket.to(`call_room_${rId}`).emit('user_left_call_room', {
+        socketId: socket.id,
+        userId: socket.callUserInfo?.userId
+      });
+      socket.callRoomId = null;
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected:', socket.id);
+    if (socket.callRoomId) {
+      socket.to(`call_room_${socket.callRoomId}`).emit('user_left_call_room', {
+        socketId: socket.id,
+        userId: socket.callUserInfo?.userId
+      });
+    }
   });
 });
 
