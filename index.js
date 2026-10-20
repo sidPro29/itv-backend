@@ -113,36 +113,202 @@ io.on('connection', (socket) => {
     }
   });
 
-  // --- WebRTC Room & Multi-User Call Signaling ---
-  socket.on('call_room_invite', ({ roomId, recipientIds, callerInfo, callType }) => {
-    const list = Array.isArray(recipientIds) ? recipientIds : [recipientIds];
-    console.log(`[CallRoom] Invite to room ${roomId} for:`, list);
-    list.forEach(targetId => {
-      if (targetId) {
-        io.to(targetId.toString()).emit('incoming_call_room', {
-          roomId,
-          callerInfo,
-          callType,
-          allRecipients: list
-        });
-      }
+  // --- WebRTC Slack-Style Persistent Call Rooms & Multi-User Signaling ---
+  const activeCallRooms = global.activeCallRooms || new Map();
+  global.activeCallRooms = activeCallRooms;
+
+  const getConversationKey = (id1, id2) => {
+    if (!id1 || !id2) return null;
+    return [id1.toString(), id2.toString()].sort().join(':');
+  };
+
+  const broadcastCallUpdate = (room) => {
+    if (!room) return;
+    const participantsList = Array.from(room.participants.values());
+    const payload = {
+      roomId: room.roomId,
+      conversationKey: room.conversationKey,
+      callerInfo: room.callerInfo,
+      callType: room.callType,
+      startedAt: room.startedAt,
+      isActive: room.participants.size > 0,
+      participantCount: room.participants.size,
+      participants: participantsList,
+      allUserIds: room.allUserIds || []
+    };
+
+    io.to(`call_room_${room.roomId}`).emit('active_call_update', payload);
+
+    if (room.allUserIds && Array.isArray(room.allUserIds)) {
+      room.allUserIds.forEach(uid => {
+        if (uid) io.to(uid.toString()).emit('active_call_update', payload);
+      });
+    }
+  };
+
+  const handleUserLeavingRoom = (leavingSocket, explicitRoomId) => {
+    const rId = explicitRoomId || leavingSocket.callRoomId;
+    if (!rId) return;
+
+    leavingSocket.leave(`call_room_${rId}`);
+    leavingSocket.to(`call_room_${rId}`).emit('user_left_call_room', {
+      socketId: leavingSocket.id,
+      userId: leavingSocket.callUserInfo?.userId
     });
+
+    const room = activeCallRooms.get(rId);
+    if (room) {
+      room.participants.delete(leavingSocket.id);
+      console.log(`[CallRoom] Socket ${leavingSocket.id} (${leavingSocket.callUserInfo?.fullName || 'User'}) left room ${rId}. Remaining: ${room.participants.size}`);
+
+      if (room.participants.size > 0) {
+        // CALL CONTINUES FOR OTHERS (Slack style persistent call)
+        broadcastCallUpdate(room);
+      } else {
+        // All participants have left -> End call officially
+        const durationSeconds = Math.round((Date.now() - (room.startedAt || Date.now())) / 1000);
+        console.log(`[CallRoom] All participants left room ${rId}. Call ended after ${durationSeconds}s`);
+        const endPayload = {
+          roomId: room.roomId,
+          conversationKey: room.conversationKey,
+          isActive: false,
+          ended: true,
+          durationSeconds,
+          participantCount: 0,
+          participants: [],
+          allUserIds: room.allUserIds || []
+        };
+
+        io.to(`call_room_${rId}`).emit('active_call_update', endPayload);
+        if (room.allUserIds && Array.isArray(room.allUserIds)) {
+          room.allUserIds.forEach(uid => {
+            if (uid) io.to(uid.toString()).emit('active_call_update', endPayload);
+          });
+        }
+        activeCallRooms.delete(rId);
+      }
+    }
+    leavingSocket.callRoomId = null;
+  };
+
+  // 1. Initiate or Invite to Call Room
+  socket.on('call_room_invite', ({ roomId, recipientIds, callerInfo, callType }) => {
+    const list = Array.isArray(recipientIds) ? recipientIds.filter(Boolean) : [recipientIds].filter(Boolean);
+    const callerId = callerInfo?.userId;
+    const allUserIds = Array.from(new Set([callerId, ...list].filter(Boolean)));
+    const conversationKey = (list.length === 1 && callerId) ? getConversationKey(callerId, list[0]) : `group_${roomId}`;
+
+    console.log(`[CallRoom] Invite to room ${roomId} for:`, list, 'caller:', callerInfo?.fullName);
+
+    // Initialize or update active room
+    let room = activeCallRooms.get(roomId);
+    if (!room) {
+      room = {
+        roomId,
+        conversationKey,
+        callerInfo,
+        callType: callType || 'video',
+        startedAt: Date.now(),
+        allUserIds,
+        participants: new Map()
+      };
+      activeCallRooms.set(roomId, room);
+    }
+
+    // Notify recipients
+    list.forEach(targetId => {
+      io.to(targetId.toString()).emit('incoming_call_room', {
+        roomId,
+        callerInfo,
+        callType,
+        allRecipients: list,
+        conversationKey
+      });
+    });
+
+    broadcastCallUpdate(room);
   });
 
+  // 2. Query Active Call for a specific chat conversation (Slack style)
+  socket.on('check_active_call', ({ recipientId, myId }, callback) => {
+    const convKey = getConversationKey(recipientId, myId);
+    let activeRoom = null;
+
+    for (const room of activeCallRooms.values()) {
+      if (room.participants.size > 0) {
+        if (room.conversationKey === convKey || (room.allUserIds && room.allUserIds.includes(recipientId) && room.allUserIds.includes(myId))) {
+          activeRoom = room;
+          break;
+        }
+      }
+    }
+
+    if (activeRoom) {
+      const payload = {
+        hasActiveCall: true,
+        roomId: activeRoom.roomId,
+        conversationKey: activeRoom.conversationKey,
+        callerInfo: activeRoom.callerInfo,
+        callType: activeRoom.callType,
+        startedAt: activeRoom.startedAt,
+        participantCount: activeRoom.participants.size,
+        participants: Array.from(activeRoom.participants.values())
+      };
+      if (typeof callback === 'function') callback(payload);
+      socket.emit('active_call_update', payload);
+    } else {
+      if (typeof callback === 'function') callback({ hasActiveCall: false });
+    }
+  });
+
+  // 3. Join Call Room
   socket.on('join_call_room', ({ roomId, userInfo }) => {
     if (!roomId) return;
     socket.join(`call_room_${roomId}`);
     socket.callRoomId = roomId;
     socket.callUserInfo = userInfo;
-    console.log(`[CallRoom] User ${userInfo?.userId || socket.id} joined call room ${roomId}`);
 
+    let room = activeCallRooms.get(roomId);
+    if (!room) {
+      room = {
+        roomId,
+        callerInfo: userInfo,
+        callType: 'video',
+        startedAt: Date.now(),
+        allUserIds: [userInfo?.userId].filter(Boolean),
+        participants: new Map()
+      };
+      activeCallRooms.set(roomId, room);
+    }
+
+    room.participants.set(socket.id, {
+      socketId: socket.id,
+      userId: userInfo?.userId,
+      fullName: userInfo?.fullName || 'Space Member',
+      avatarUrl: userInfo?.avatarUrl || '',
+      category: userInfo?.category || '',
+      isAudioMuted: Boolean(userInfo?.isAudioMuted),
+      isVideoOff: Boolean(userInfo?.isVideoOff),
+      joinedAt: Date.now()
+    });
+
+    if (userInfo?.userId && !room.allUserIds.includes(userInfo.userId)) {
+      room.allUserIds.push(userInfo.userId);
+    }
+
+    console.log(`[CallRoom] User ${userInfo?.fullName || socket.id} joined room ${roomId}. Total participants: ${room.participants.size}`);
+
+    // Notify peers in room for WebRTC peer handshake
     socket.to(`call_room_${roomId}`).emit('user_joined_call_room', {
       socketId: socket.id,
       userId: userInfo?.userId,
       userInfo
     });
+
+    broadcastCallUpdate(room);
   });
 
+  // 4. WebRTC Signaling: Offer, Answer, ICE
   socket.on('call_peer_offer', ({ targetSocketId, targetUserId, offer, senderInfo }) => {
     const payload = {
       senderSocketId: socket.id,
@@ -187,6 +353,13 @@ io.on('connection', (socket) => {
   socket.on('call_peer_track_state', ({ roomId, isAudioMuted, isVideoOff, isScreenSharing }) => {
     const rId = roomId || socket.callRoomId;
     if (rId) {
+      const room = activeCallRooms.get(rId);
+      if (room && room.participants.has(socket.id)) {
+        const p = room.participants.get(socket.id);
+        if (isAudioMuted !== undefined) p.isAudioMuted = isAudioMuted;
+        if (isVideoOff !== undefined) p.isVideoOff = isVideoOff;
+      }
+
       socket.to(`call_room_${rId}`).emit('call_peer_track_state', {
         userId: socket.callUserInfo?.userId,
         socketId: socket.id,
@@ -198,25 +371,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('leave_call_room', ({ roomId }) => {
-    const rId = roomId || socket.callRoomId;
-    if (rId) {
-      socket.leave(`call_room_${rId}`);
-      socket.to(`call_room_${rId}`).emit('user_left_call_room', {
-        socketId: socket.id,
-        userId: socket.callUserInfo?.userId
-      });
-      socket.callRoomId = null;
-    }
+    handleUserLeavingRoom(socket, roomId);
   });
 
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected:', socket.id);
-    if (socket.callRoomId) {
-      socket.to(`call_room_${socket.callRoomId}`).emit('user_left_call_room', {
-        socketId: socket.id,
-        userId: socket.callUserInfo?.userId
-      });
-    }
+    handleUserLeavingRoom(socket);
   });
 });
 
