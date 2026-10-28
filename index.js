@@ -61,6 +61,10 @@ const io = new Server(server, {
   }
 });
 
+// WebRTC Slack-Style Persistent Call Rooms
+const activeCallRooms = global.activeCallRooms || new Map();
+global.activeCallRooms = activeCallRooms;
+
 // Socket.io WebRTC Signaling & Real-time Messaging
 io.on('connection', (socket) => {
   console.log('[Socket] Connected:', socket.id);
@@ -69,6 +73,30 @@ io.on('connection', (socket) => {
     if (userId) {
       socket.join(userId.toString());
       console.log(`[Socket] User ${userId} joined socket room`);
+
+      // Immediately inform reconnected / refreshed user of any active calls they belong to (Slack style)
+      for (const room of activeCallRooms.values()) {
+        if (room && room.participants && room.participants.size > 0) {
+          const isParticipantOrInvited = 
+            (room.allUserIds && room.allUserIds.map(id => id?.toString()).includes(userId.toString())) ||
+            (room.conversationKey && room.conversationKey.includes(userId.toString()));
+
+          if (isParticipantOrInvited) {
+            const participantsList = Array.from(room.participants.values());
+            socket.emit('active_call_update', {
+              roomId: room.roomId,
+              conversationKey: room.conversationKey,
+              callerInfo: room.callerInfo,
+              callType: room.callType,
+              startedAt: room.startedAt,
+              isActive: true,
+              participantCount: room.participants.size,
+              participants: participantsList,
+              allUserIds: room.allUserIds || []
+            });
+          }
+        }
+      }
     }
   });
 
@@ -114,8 +142,6 @@ io.on('connection', (socket) => {
   });
 
   // --- WebRTC Slack-Style Persistent Call Rooms & Multi-User Signaling ---
-  const activeCallRooms = global.activeCallRooms || new Map();
-  global.activeCallRooms = activeCallRooms;
 
   const getConversationKey = (id1, id2) => {
     if (!id1 || !id2) return null;
@@ -209,10 +235,17 @@ io.on('connection', (socket) => {
         callerInfo,
         callType: callType || 'video',
         startedAt: Date.now(),
-        allUserIds,
+        allUserIds: [...allUserIds],
         participants: new Map()
       };
       activeCallRooms.set(roomId, room);
+    } else {
+      // Append new recipients to room.allUserIds so reconnected users are recognized
+      list.forEach(targetId => {
+        if (targetId && !room.allUserIds.map(x => x.toString()).includes(targetId.toString())) {
+          room.allUserIds.push(targetId);
+        }
+      });
     }
 
     // Notify recipients
