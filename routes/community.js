@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const CommunityMessage = require('../models/CommunityMessage');
+const ScheduledCall = require('../models/ScheduledCall');
 const auth = require('../middleware/auth');
 
 // Utility helper to check if user has an active ITV Web subscription
@@ -390,7 +391,9 @@ router.get('/messages/:recipientId', auth, async (req, res) => {
         { sender: req.user.id, recipient: req.params.recipientId },
         { sender: req.params.recipientId, recipient: req.user.id }
       ]
-    }).sort({ createdAt: 1 });
+    })
+      .populate('scheduledCallId')
+      .sort({ createdAt: 1 });
 
     res.json(messages);
   } catch (err) {
@@ -496,6 +499,147 @@ router.post('/subscribe', auth, async (req, res) => {
     });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// --- SCHEDULED CALLS (MEETINGS) ENDPOINTS ---
+
+// @route   POST /api/community/scheduled-calls
+// @desc    Schedule a new audio/video call with participants
+// @access  Private
+router.post('/scheduled-calls', auth, async (req, res) => {
+  try {
+    const { title, description, callType, scheduledAt, durationMinutes, participantIds } = req.body;
+    if (!title || !scheduledAt) {
+      return res.status(400).json({ msg: 'Title and scheduled time are required' });
+    }
+
+    const hostUser = await User.findById(req.user.id);
+    if (!hostUser) return res.status(404).json({ msg: 'User not found' });
+
+    const roomId = `sched_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const validParticipantIds = Array.isArray(participantIds) ? participantIds.filter(id => id && id.toString() !== req.user.id.toString()) : [];
+
+    const newCall = new ScheduledCall({
+      title,
+      description: description || '',
+      callType: callType === 'audio' ? 'audio' : 'video',
+      scheduledAt: new Date(scheduledAt),
+      durationMinutes: durationMinutes || 30,
+      host: req.user.id,
+      participants: validParticipantIds,
+      roomId,
+      status: 'scheduled'
+    });
+
+    await newCall.save();
+    await newCall.populate('host', 'username communityProfile');
+    await newCall.populate('participants', 'username communityProfile');
+
+    // Automatically send an invite message to each participant's chat
+    const hostName = hostUser.communityProfile?.fullName || hostUser.username;
+    const formattedDate = new Date(scheduledAt).toLocaleString([], { 
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+    });
+
+    for (const pId of validParticipantIds) {
+      try {
+        const inviteMessage = new CommunityMessage({
+          sender: req.user.id,
+          recipient: pId,
+          content: `📅 Scheduled ${callType === 'audio' ? 'Audio' : 'Video'} Call: "${title}" on ${formattedDate}`,
+          type: 'scheduled_call',
+          scheduledCallId: newCall._id
+        });
+        await inviteMessage.save();
+
+        const pUser = await User.findById(pId);
+        if (pUser) {
+          if (!pUser.notifications) pUser.notifications = [];
+          pUser.notifications.push({
+            title: `New Meeting Invite from ${hostName}`,
+            message: `"${title}" scheduled for ${formattedDate}`,
+            type: 'chat',
+            link: `/schedule`,
+            read: false,
+            createdAt: new Date()
+          });
+          await pUser.save();
+        }
+      } catch (errMsg) {
+        console.warn('Error sending automated invite message:', errMsg);
+      }
+    }
+
+    res.json(newCall);
+  } catch (err) {
+    console.error('Error creating scheduled call:', err);
+    res.status(500).json({ msg: 'Server error creating scheduled call' });
+  }
+});
+
+// @route   GET /api/community/scheduled-calls
+// @desc    Get all scheduled calls for current user
+// @access  Private
+router.get('/scheduled-calls', auth, async (req, res) => {
+  try {
+    const calls = await ScheduledCall.find({
+      $or: [
+        { host: req.user.id },
+        { participants: req.user.id }
+      ]
+    })
+      .populate('host', 'username communityProfile')
+      .populate('participants', 'username communityProfile')
+      .sort({ scheduledAt: 1 });
+
+    res.json(calls);
+  } catch (err) {
+    console.error('Error fetching scheduled calls:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   DELETE /api/community/scheduled-calls/:id
+// @desc    Cancel/Delete a scheduled call (host only)
+// @access  Private
+router.delete('/scheduled-calls/:id', auth, async (req, res) => {
+  try {
+    const call = await ScheduledCall.findById(req.params.id);
+    if (!call) return res.status(404).json({ msg: 'Scheduled call not found' });
+
+    if (call.host.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'superAdmin') {
+      return res.status(403).json({ msg: 'Not authorized to cancel this call' });
+    }
+
+    call.status = 'cancelled';
+    await call.save();
+    res.json({ msg: 'Call cancelled successfully', call });
+  } catch (err) {
+    console.error('Error cancelling scheduled call:', err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// @route   PUT /api/community/scheduled-calls/:id/status
+// @desc    Update call status (active / completed)
+// @access  Private
+router.put('/scheduled-calls/:id/status', auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['scheduled', 'active', 'completed', 'cancelled'].includes(status)) {
+      return res.status(400).json({ msg: 'Invalid status' });
+    }
+
+    const call = await ScheduledCall.findById(req.params.id);
+    if (!call) return res.status(404).json({ msg: 'Scheduled call not found' });
+
+    call.status = status;
+    await call.save();
+    res.json(call);
+  } catch (err) {
+    console.error('Error updating call status:', err);
     res.status(500).json({ msg: 'Server error' });
   }
 });
