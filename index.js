@@ -360,7 +360,15 @@ io.on('connection', (socket) => {
       isLive: true
     });
 
-    // Notify peers in room for WebRTC peer handshake
+    // 1. Send all EXISTING participants in this room to the joining socket
+    const existingPeers = Array.from(room.participants.values())
+      .filter(p => p.socketId !== socket.id);
+
+    socket.emit('call_room_existing_peers', {
+      peers: existingPeers
+    });
+
+    // 2. Notify peers in room for WebRTC peer handshake
     socket.to(`call_room_${roomId}`).emit('user_joined_call_room', {
       socketId: socket.id,
       userId: userInfo?.userId,
