@@ -515,6 +515,16 @@ router.post('/scheduled-calls', auth, async (req, res) => {
       return res.status(400).json({ msg: 'Title and scheduled time are required' });
     }
 
+    const scheduledDate = new Date(scheduledAt);
+    if (isNaN(scheduledDate.getTime())) {
+      return res.status(400).json({ msg: 'Invalid scheduled date' });
+    }
+
+    // Must be in the future (with 1-min buffer for network transmission)
+    if (scheduledDate.getTime() < Date.now() - 60000) {
+      return res.status(400).json({ msg: 'Meetings can only be scheduled for a future date and time' });
+    }
+
     const hostUser = await User.findById(req.user.id);
     if (!hostUser) return res.status(404).json({ msg: 'User not found' });
 
@@ -525,7 +535,7 @@ router.post('/scheduled-calls', auth, async (req, res) => {
       title,
       description: description || '',
       callType: callType === 'audio' ? 'audio' : 'video',
-      scheduledAt: new Date(scheduledAt),
+      scheduledAt: scheduledDate,
       durationMinutes: durationMinutes || 30,
       host: req.user.id,
       participants: validParticipantIds,
@@ -622,6 +632,54 @@ router.delete('/scheduled-calls/:id', auth, async (req, res) => {
   }
 });
 
+// @route   PUT /api/community/scheduled-calls/:id
+// @desc    Update / Edit a scheduled call (host or admin only)
+// @access  Private
+router.put('/scheduled-calls/:id', auth, async (req, res) => {
+  try {
+    const { title, description, callType, scheduledAt, durationMinutes, participantIds } = req.body;
+    
+    const call = await ScheduledCall.findById(req.params.id);
+    if (!call) return res.status(404).json({ msg: 'Scheduled call not found' });
+
+    if (call.host.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'superAdmin') {
+      return res.status(403).json({ msg: 'Only the meeting host can edit this meeting' });
+    }
+
+    if (title) call.title = title.trim();
+    if (description !== undefined) call.description = description.trim();
+    if (callType && ['video', 'audio'].includes(callType)) call.callType = callType;
+
+    if (scheduledAt) {
+      const scheduledDate = new Date(scheduledAt);
+      if (isNaN(scheduledDate.getTime())) {
+        return res.status(400).json({ msg: 'Invalid scheduled date' });
+      }
+      if (scheduledDate.getTime() < Date.now() - 60000) {
+        return res.status(400).json({ msg: 'Meetings can only be scheduled for a future date and time' });
+      }
+      call.scheduledAt = scheduledDate;
+    }
+
+    if (durationMinutes && !isNaN(durationMinutes)) {
+      call.durationMinutes = Math.max(15, Number(durationMinutes));
+    }
+
+    if (Array.isArray(participantIds)) {
+      call.participants = participantIds.filter(id => id && id.toString() !== call.host.toString());
+    }
+
+    await call.save();
+    await call.populate('host', 'username communityProfile');
+    await call.populate('participants', 'username communityProfile');
+
+    res.json(call);
+  } catch (err) {
+    console.error('Error updating scheduled call:', err);
+    res.status(500).json({ msg: 'Server error updating scheduled call' });
+  }
+});
+
 // @route   PUT /api/community/scheduled-calls/:id/status
 // @desc    Update call status (active / completed)
 // @access  Private
@@ -649,7 +707,7 @@ router.put('/scheduled-calls/:id/status', auth, async (req, res) => {
 // @access  Private
 router.post('/check-availability', auth, async (req, res) => {
   try {
-    const { start, end } = req.body;
+    const { start, end, excludeCallId } = req.body;
     if (!start || !end) {
       return res.status(400).json({ msg: 'Start and end times are required' });
     }
@@ -658,10 +716,15 @@ router.post('/check-availability', auth, async (req, res) => {
     const windowEnd = new Date(end);
 
     // Find all active or scheduled calls that overlap with [windowStart, windowEnd]
-    const potentialCollisions = await ScheduledCall.find({
+    const query = {
       status: { $in: ['scheduled', 'active'] },
       scheduledAt: { $lt: windowEnd }
-    });
+    };
+    if (excludeCallId) {
+      query._id = { $ne: excludeCallId };
+    }
+
+    const potentialCollisions = await ScheduledCall.find(query);
 
     const busyUserIds = new Set();
     potentialCollisions.forEach(call => {
