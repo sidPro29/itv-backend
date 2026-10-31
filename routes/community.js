@@ -644,4 +644,46 @@ router.put('/scheduled-calls/:id/status', auth, async (req, res) => {
   }
 });
 
+// @route   POST /api/community/check-availability
+// @desc    Check which community members have conflicting meetings for a given time window
+// @access  Private
+router.post('/check-availability', auth, async (req, res) => {
+  try {
+    const { start, end } = req.body;
+    if (!start || !end) {
+      return res.status(400).json({ msg: 'Start and end times are required' });
+    }
+
+    const windowStart = new Date(start);
+    const windowEnd = new Date(end);
+
+    // Find all active or scheduled calls that overlap with [windowStart, windowEnd]
+    const potentialCollisions = await ScheduledCall.find({
+      status: { $in: ['scheduled', 'active'] },
+      scheduledAt: { $lt: windowEnd }
+    });
+
+    const busyUserIds = new Set();
+    potentialCollisions.forEach(call => {
+      const callStart = new Date(call.scheduledAt);
+      const callEnd = new Date(callStart.getTime() + (call.durationMinutes || 30) * 60000);
+
+      // Overlap condition: callStart < windowEnd && callEnd > windowStart
+      if (callStart < windowEnd && callEnd > windowStart) {
+        if (call.host) busyUserIds.add(call.host.toString());
+        if (Array.isArray(call.participants)) {
+          call.participants.forEach(p => {
+            if (p) busyUserIds.add(p.toString());
+          });
+        }
+      }
+    });
+
+    res.json({ busyUserIds: Array.from(busyUserIds) });
+  } catch (err) {
+    console.error('Error checking availability:', err);
+    res.status(500).json({ msg: 'Server error checking availability' });
+  }
+});
+
 module.exports = router;
