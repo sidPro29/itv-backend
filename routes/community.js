@@ -611,16 +611,16 @@ router.get('/scheduled-calls', auth, async (req, res) => {
   }
 });
 
-// @route   DELETE /api/community/scheduled-calls/:id
-// @desc    Cancel/Delete a scheduled call (host only)
+// @route   PUT /api/community/scheduled-calls/:id/cancel
+// @desc    Cancel an upcoming scheduled call (host or admin only)
 // @access  Private
-router.delete('/scheduled-calls/:id', auth, async (req, res) => {
+router.put('/scheduled-calls/:id/cancel', auth, async (req, res) => {
   try {
     const call = await ScheduledCall.findById(req.params.id);
     if (!call) return res.status(404).json({ msg: 'Scheduled call not found' });
 
     if (call.host.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'superAdmin') {
-      return res.status(403).json({ msg: 'Not authorized to cancel this call' });
+      return res.status(403).json({ msg: 'Only the meeting host can cancel this call' });
     }
 
     call.status = 'cancelled';
@@ -628,7 +628,40 @@ router.delete('/scheduled-calls/:id', auth, async (req, res) => {
     res.json({ msg: 'Call cancelled successfully', call });
   } catch (err) {
     console.error('Error cancelling scheduled call:', err);
-    res.status(500).json({ msg: 'Server error' });
+    res.status(500).json({ msg: 'Server error cancelling call' });
+  }
+});
+
+// @route   DELETE /api/community/scheduled-calls/:id
+// @desc    Permanently delete a scheduled call from database (host or admin only)
+//          Upcoming meetings cannot be deleted directly; they must be cancelled first!
+// @access  Private
+router.delete('/scheduled-calls/:id', auth, async (req, res) => {
+  try {
+    const call = await ScheduledCall.findById(req.params.id);
+    if (!call) return res.status(404).json({ msg: 'Scheduled call not found' });
+
+    if (call.host.toString() !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'superAdmin') {
+      return res.status(403).json({ msg: 'Only the meeting host can delete this call' });
+    }
+
+    // Check if the meeting is upcoming and not yet cancelled
+    const now = new Date();
+    const callEndDate = new Date(new Date(call.scheduledAt).getTime() + (call.durationMinutes || 30) * 60000);
+    const isUpcoming = call.status !== 'cancelled' && callEndDate >= now;
+
+    if (isUpcoming) {
+      return res.status(400).json({ 
+        msg: 'Upcoming meetings cannot be directly deleted. Please cancel the meeting first.' 
+      });
+    }
+
+    // Permanently remove from database
+    await ScheduledCall.findByIdAndDelete(req.params.id);
+    res.json({ msg: 'Meeting permanently removed from database', id: req.params.id });
+  } catch (err) {
+    console.error('Error deleting scheduled call:', err);
+    res.status(500).json({ msg: 'Server error deleting scheduled call' });
   }
 });
 
