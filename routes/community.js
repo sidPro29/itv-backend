@@ -537,7 +537,7 @@ router.post('/scheduled-calls', auth, async (req, res) => {
     await newCall.populate('host', 'username communityProfile');
     await newCall.populate('participants', 'username communityProfile');
 
-    // Automatically send an invite message to each participant's chat
+    // Send in-app notification to each participant (without flooding chat messages)
     const hostName = hostUser.communityProfile?.fullName || hostUser.username;
     const formattedDate = new Date(scheduledAt).toLocaleString([], { 
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
@@ -545,22 +545,13 @@ router.post('/scheduled-calls', auth, async (req, res) => {
 
     for (const pId of validParticipantIds) {
       try {
-        const inviteMessage = new CommunityMessage({
-          sender: req.user.id,
-          recipient: pId,
-          content: `📅 Scheduled ${callType === 'audio' ? 'Audio' : 'Video'} Call: "${title}" on ${formattedDate}`,
-          type: 'scheduled_call',
-          scheduledCallId: newCall._id
-        });
-        await inviteMessage.save();
-
         const pUser = await User.findById(pId);
         if (pUser) {
           if (!pUser.notifications) pUser.notifications = [];
           pUser.notifications.push({
-            title: `New Meeting Invite from ${hostName}`,
-            message: `"${title}" scheduled for ${formattedDate}`,
-            type: 'chat',
+            title: `New Meeting: ${title}`,
+            message: `Scheduled by ${hostName} for ${formattedDate}`,
+            type: 'meeting',
             link: `/schedule`,
             read: false,
             createdAt: new Date()
@@ -568,7 +559,7 @@ router.post('/scheduled-calls', auth, async (req, res) => {
           await pUser.save();
         }
       } catch (errMsg) {
-        console.warn('Error sending automated invite message:', errMsg);
+        console.warn('Error sending automated notification:', errMsg);
       }
     }
 
@@ -580,7 +571,7 @@ router.post('/scheduled-calls', auth, async (req, res) => {
 });
 
 // @route   GET /api/community/scheduled-calls
-// @desc    Get all scheduled calls for current user
+// @desc    Get all scheduled calls for current user with live participant count
 // @access  Private
 router.get('/scheduled-calls', auth, async (req, res) => {
   try {
@@ -594,7 +585,16 @@ router.get('/scheduled-calls', auth, async (req, res) => {
       .populate('participants', 'username communityProfile')
       .sort({ scheduledAt: 1 });
 
-    res.json(calls);
+    const activeCallRooms = global.activeCallRooms || new Map();
+    const enrichedCalls = calls.map(c => {
+      const callObj = c.toObject();
+      const room = activeCallRooms.get(c.roomId);
+      callObj.liveParticipantCount = room && room.participants ? room.participants.size : 0;
+      callObj.isLive = callObj.liveParticipantCount > 0;
+      return callObj;
+    });
+
+    res.json(enrichedCalls);
   } catch (err) {
     console.error('Error fetching scheduled calls:', err);
     res.status(500).json({ msg: 'Server error' });

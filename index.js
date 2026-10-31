@@ -165,6 +165,13 @@ io.on('connection', (socket) => {
 
     io.to(`call_room_${room.roomId}`).emit('active_call_update', payload);
 
+    // Global broadcast for real-time room participant counter in Schedule page
+    io.emit('call_room_participant_update', {
+      roomId: room.roomId,
+      participantCount: room.participants.size,
+      isLive: room.participants.size > 0
+    });
+
     if (room.allUserIds && Array.isArray(room.allUserIds)) {
       room.allUserIds.forEach(uid => {
         if (uid) io.to(uid.toString()).emit('active_call_update', payload);
@@ -206,6 +213,11 @@ io.on('connection', (socket) => {
         };
 
         io.to(`call_room_${rId}`).emit('active_call_update', endPayload);
+        io.emit('call_room_participant_update', {
+          roomId: room.roomId,
+          participantCount: 0,
+          isLive: false
+        });
         if (room.allUserIds && Array.isArray(room.allUserIds)) {
           room.allUserIds.forEach(uid => {
             if (uid) io.to(uid.toString()).emit('active_call_update', endPayload);
@@ -294,6 +306,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Query live room participant counts for scheduled calls
+  socket.on('get_live_room_counts', (callback) => {
+    const counts = {};
+    for (const [rId, room] of activeCallRooms.entries()) {
+      if (room && room.participants) {
+        counts[rId] = room.participants.size;
+      }
+    }
+    if (typeof callback === 'function') callback(counts);
+  });
+
   // 3. Join Call Room
   socket.on('join_call_room', ({ roomId, userInfo }) => {
     if (!roomId) return;
@@ -330,6 +353,12 @@ io.on('connection', (socket) => {
     }
 
     console.log(`[CallRoom] User ${userInfo?.fullName || socket.id} joined room ${roomId}. Total participants: ${room.participants.size}`);
+
+    io.emit('call_room_participant_update', {
+      roomId: room.roomId,
+      participantCount: room.participants.size,
+      isLive: true
+    });
 
     // Notify peers in room for WebRTC peer handshake
     socket.to(`call_room_${roomId}`).emit('user_joined_call_room', {
