@@ -74,3 +74,4 @@ SupportTicketSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.model('SupportTicket', SupportTicketSchema);
+
