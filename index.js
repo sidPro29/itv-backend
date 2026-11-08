@@ -48,6 +48,7 @@ app.use('/api/logs', require('./routes/logs'));
 app.use('/api/apks', require('./routes/apks'));
 app.use('/api/community', require('./routes/community'));
 app.use('/api/admin/community', require('./routes/adminCommunity'));
+app.use('/api/support', require('./routes/support'));
 
 
 const http = require('http');
@@ -60,6 +61,7 @@ const io = new Server(server, {
     methods: ['GET', 'POST']
   }
 });
+app.set('io', io);
 
 // WebRTC Slack-Style Persistent Call Rooms
 const activeCallRooms = global.activeCallRooms || new Map();
@@ -444,6 +446,12 @@ io.on('connection', (socket) => {
     handleUserLeavingRoom(socket, roomId);
   });
 
+  // Support Ticket Real-time Channel
+  socket.on('join_support_ticket', ({ ticketId, ticketNumber }) => {
+    if (ticketId) socket.join(`support_${ticketId}`);
+    if (ticketNumber) socket.join(`support_${ticketNumber}`);
+  });
+
   socket.on('disconnect', () => {
     console.log('[Socket] Disconnected:', socket.id);
     handleUserLeavingRoom(socket);
@@ -457,4 +465,10 @@ app.get('/', (req, res) => {
 // Start Server
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  try {
+    const { registerTelegramWebhook } = require('./services/telegramSupport');
+    registerTelegramWebhook().catch(err => console.warn('[TelegramSupport] Webhook init notice:', err.message));
+  } catch (e) {
+    console.warn('[TelegramSupport] Webhook init error:', e.message);
+  }
 });
