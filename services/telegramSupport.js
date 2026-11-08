@@ -95,10 +95,24 @@ async function handleTelegramWebhook(update, io) {
   let targetTicket = null;
 
   if (replyTo && replyTo.message_id) {
-    // 1. Find ticket matching the original bot message ID
+    // 1. Direct message ID match
     targetTicket = await SupportTicket.findOne({
       'telegramMessages.messageId': replyTo.message_id
     });
+
+    // 2. If replied inside channel discussion group (linked to original channel post)
+    if (!targetTicket && replyTo.forward_from_message_id) {
+      targetTicket = await SupportTicket.findOne({
+        'telegramMessages.messageId': replyTo.forward_from_message_id
+      });
+    }
+
+    // 3. Telegram Bot API 7.0+ forward_origin structure
+    if (!targetTicket && replyTo.forward_origin?.message_id) {
+      targetTicket = await SupportTicket.findOne({
+        'telegramMessages.messageId': replyTo.forward_origin.message_id
+      });
+    }
   }
 
   // 2. Fallback: Parse ticket number from reply text or replied text: e.g. #ITV-1024
