@@ -8,10 +8,10 @@ const admin = require('../middleware/admin');
 const superAdmin = require('../middleware/superAdmin');
 const { logActivity } = require('../utils/logger');
 
-// Get all plans
+// Get all active plans
 router.get('/', async (req, res) => {
   try {
-    const plans = await Plan.find().sort({ createdAt: -1 });
+    const plans = await Plan.find({ isActive: { $ne: false } }).sort({ amount: 1 });
     res.json(plans);
   } catch (err) {
     console.error(err.message);
@@ -99,6 +99,20 @@ router.post('/purchase', auth, async (req, res) => {
       }
     }
 
+    // Check verification badge level requirement for community plans
+    if (plan.requiredBadge && plan.requiredBadge !== 'none') {
+      const badgeHierarchy = { none: 0, enthusiast: 1, professional: 2, entrepreneur: 3 };
+      const userBadgeLevel = badgeHierarchy[user.verificationBadge || 'none'] || 0;
+      const requiredLevel = badgeHierarchy[plan.requiredBadge] || 1;
+      const isAdmin = user.role === 'admin' || user.role === 'superAdmin';
+
+      if (!isAdmin && userBadgeLevel < requiredLevel) {
+        return res.status(403).json({
+          msg: `This plan requires a verified ${plan.requiredBadge.toUpperCase()} badge. Your current badge level only allows plans up to ${user.verificationBadge || 'none'}.`
+        });
+      }
+    }
+
     // Stripe processing (mock if STRIPE_SECRET_KEY is not defined or is dummy placeholder)
     let paymentId = 'pi_mock_' + Math.random().toString(36).substring(2, 11) + Date.now();
     const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -145,6 +159,22 @@ router.post('/purchase', auth, async (req, res) => {
       planId: plan._id,
       expiryDate
     }];
+
+    // Also sync community subscription tier if purchasing a community/space plan
+    if (plan.type === 'community' || plan.name.toLowerCase().includes('space')) {
+      const tier = plan.name.toLowerCase().includes('entrepreneur') 
+        ? 'entrepreneur' 
+        : plan.name.toLowerCase().includes('professional') 
+        ? 'professional' 
+        : 'enthusiast';
+      
+      user.communitySubscription = {
+        tier,
+        expiryDate,
+        unlockedMembers: user.communitySubscription?.unlockedMembers || []
+      };
+    }
+
     await user.save();
 
     const updatedUser = await User.findById(user._id).select('-password');
@@ -193,6 +223,22 @@ router.post('/confirm-purchase', auth, async (req, res) => {
       planId: plan._id,
       expiryDate
     }];
+
+    // Also sync community subscription tier if purchasing a community/space plan
+    if (plan.type === 'community' || plan.name.toLowerCase().includes('space')) {
+      const tier = plan.name.toLowerCase().includes('entrepreneur') 
+        ? 'entrepreneur' 
+        : plan.name.toLowerCase().includes('professional') 
+        ? 'professional' 
+        : 'enthusiast';
+      
+      user.communitySubscription = {
+        tier,
+        expiryDate,
+        unlockedMembers: user.communitySubscription?.unlockedMembers || []
+      };
+    }
+
     await user.save();
 
     const updatedUser = await User.findById(user._id).select('-password');

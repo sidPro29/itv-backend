@@ -77,7 +77,7 @@ const UserSchema = new mongoose.Schema({
   },
   
   communitySubscription: {
-    tier: { type: String, enum: ['free', 'basic', 'plus', 'pro'], default: 'free' },
+    tier: { type: String, enum: ['free', 'enthusiast', 'professional', 'entrepreneur', 'basic', 'plus', 'pro'], default: 'free' },
     expiryDate: Date,
     unlockedMembers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
   },

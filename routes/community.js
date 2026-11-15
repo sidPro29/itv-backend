@@ -470,17 +470,62 @@ router.post('/messages', auth, async (req, res) => {
 });
 
 // @route   POST /api/community/subscribe
-// @desc    Upgrade Community Plan (Basic, Plus, Pro)
+// @desc    Upgrade Community Plan (Space Enthusiast, Space Professional, Space Entrepreneur)
 // @access  Private
 router.post('/subscribe', auth, async (req, res) => {
   try {
     const { tier } = req.body;
-    if (!['basic', 'plus', 'pro'].includes(tier)) {
+    const validTiers = ['enthusiast', 'professional', 'entrepreneur', 'basic', 'plus', 'pro'];
+    if (!validTiers.includes(tier)) {
       return res.status(400).json({ msg: 'Invalid tier selection' });
     }
 
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    const badgeHierarchy = {
+      none: 0,
+      enthusiast: 1,
+      professional: 2,
+      entrepreneur: 3
+    };
+
+    const tierRequiredLevel = {
+      enthusiast: 1,
+      professional: 2,
+      entrepreneur: 3,
+      basic: 1,
+      plus: 2,
+      pro: 3
+    };
+
+    const userBadge = user.verificationBadge || 'none';
+    const userBadgeLevel = badgeHierarchy[userBadge] || 0;
+    const requiredLevel = tierRequiredLevel[tier] || 1;
+    const isAdmin = user.role === 'admin' || user.role === 'superAdmin';
+
+    // Verification Badge check: User can only purchase plans up to their verification badge level
+    if (!isAdmin) {
+      if (user.verificationStatus !== 'verified' || userBadgeLevel === 0) {
+        return res.status(403).json({
+          msg: 'You must first submit your credentials and obtain an officially verified badge before subscribing to a community plan.',
+          requiresVerification: true
+        });
+      }
+
+      if (userBadgeLevel < requiredLevel) {
+        const tierDisplayNames = {
+          enthusiast: 'Space Enthusiast',
+          professional: 'Space Professional',
+          entrepreneur: 'Space Entrepreneur'
+        };
+        return res.status(403).json({
+          msg: `Your current verified badge is ${userBadge.toUpperCase()}. To subscribe to ${tierDisplayNames[tier] || tier}, you must be verified as at least ${tierDisplayNames[tier] || tier}.`,
+          userBadge,
+          requiredTier: tier
+        });
+      }
+    }
 
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 30);
@@ -493,8 +538,14 @@ router.post('/subscribe', auth, async (req, res) => {
 
     await user.save();
 
+    const planDisplayNames = {
+      enthusiast: 'Space Enthusiast (€1.99 + VAT)',
+      professional: 'Space Professional (€9.99 + VAT)',
+      entrepreneur: 'Space Entrepreneur (€19.99 + VAT)'
+    };
+
     res.json({
-      msg: `Successfully subscribed to Community ${tier.toUpperCase()} Plan!`,
+      msg: `Successfully subscribed to ${planDisplayNames[tier] || tier.toUpperCase()} Plan!`,
       communitySubscription: user.communitySubscription
     });
   } catch (err) {
