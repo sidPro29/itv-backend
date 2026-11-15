@@ -502,29 +502,25 @@ router.post('/subscribe', auth, async (req, res) => {
     const userBadge = user.verificationBadge || 'none';
     const userBadgeLevel = badgeHierarchy[userBadge] || 0;
     const requiredLevel = tierRequiredLevel[tier] || 1;
-    const isAdmin = user.role === 'admin' || user.role === 'superAdmin';
-
     // Verification Badge check: User can only purchase plans up to their verification badge level
-    if (!isAdmin) {
-      if (user.verificationStatus !== 'verified' || userBadgeLevel === 0) {
-        return res.status(403).json({
-          msg: 'You must first submit your credentials and obtain an officially verified badge before subscribing to a community plan.',
-          requiresVerification: true
-        });
-      }
+    if (user.verificationStatus !== 'verified' || userBadgeLevel === 0) {
+      return res.status(403).json({
+        msg: 'You must first submit your credentials and obtain an officially verified badge before subscribing to a community plan.',
+        requiresVerification: true
+      });
+    }
 
-      if (userBadgeLevel < requiredLevel) {
-        const tierDisplayNames = {
-          enthusiast: 'Space Enthusiast',
-          professional: 'Space Professional',
-          entrepreneur: 'Space Entrepreneur'
-        };
-        return res.status(403).json({
-          msg: `Your current verified badge is ${userBadge.toUpperCase()}. To subscribe to ${tierDisplayNames[tier] || tier}, you must be verified as at least ${tierDisplayNames[tier] || tier}.`,
-          userBadge,
-          requiredTier: tier
-        });
-      }
+    if (userBadgeLevel < requiredLevel) {
+      const tierDisplayNames = {
+        enthusiast: 'Space Enthusiast',
+        professional: 'Space Professional',
+        entrepreneur: 'Space Entrepreneur'
+      };
+      return res.status(403).json({
+        msg: `Your current verified badge is ${userBadge.toUpperCase()}. To subscribe to ${tierDisplayNames[tier] || tier}, you must be verified as at least ${tierDisplayNames[tier] || tier}.`,
+        userBadge,
+        requiredTier: tier
+      });
     }
 
     const expiryDate = new Date();

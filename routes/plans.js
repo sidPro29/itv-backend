@@ -104,9 +104,8 @@ router.post('/purchase', auth, async (req, res) => {
       const badgeHierarchy = { none: 0, enthusiast: 1, professional: 2, entrepreneur: 3 };
       const userBadgeLevel = badgeHierarchy[user.verificationBadge || 'none'] || 0;
       const requiredLevel = badgeHierarchy[plan.requiredBadge] || 1;
-      const isAdmin = user.role === 'admin' || user.role === 'superAdmin';
 
-      if (!isAdmin && userBadgeLevel < requiredLevel) {
+      if (userBadgeLevel < requiredLevel) {
         return res.status(403).json({
           msg: `This plan requires a verified ${plan.requiredBadge.toUpperCase()} badge. Your current badge level only allows plans up to ${user.verificationBadge || 'none'}.`
         });
