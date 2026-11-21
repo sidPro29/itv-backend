@@ -6,16 +6,59 @@ const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const User = require('../models/User');
 
+const isSmtpConfigured = () => {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+};
+
 const createTransporter = () => {
+  const port = parseInt(process.env.SMTP_PORT, 10) || 587;
+  const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: process.env.SMTP_PORT || 587,
+    port: port,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER || 'ethereal_user',
       pass: process.env.SMTP_PASS || 'ethereal_pass'
+    },
+    tls: {
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED === 'false' ? false : true
     }
   });
 };
+
+// @route   GET api/auth/smtp-status
+// @desc    Check if SMTP email service is configured and verify connection
+// @access  Public
+router.get('/smtp-status', async (req, res) => {
+  const configured = isSmtpConfigured();
+  if (!configured) {
+    return res.json({
+      configured: false,
+      msg: 'SMTP email credentials not set. Running in simulation mode (logins bypass 2FA until SMTP is configured).'
+    });
+  }
+
+  try {
+    const transporter = createTransporter();
+    await transporter.verify();
+    res.json({
+      configured: true,
+      connected: true,
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT || 587,
+      user: process.env.SMTP_USER,
+      msg: 'SMTP connection verified successfully.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      configured: true,
+      connected: false,
+      error: err.message,
+      msg: 'SMTP configured but connection failed. Please check host, port, user or app password.'
+    });
+  }
+});
 
 // @route   POST api/auth/signup
 // @desc    Register user
@@ -95,7 +138,11 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ msg: 'Your temporary password has expired. Please request a new invitation.' });
     }
 
-    if (skip2FA) {
+    const smtpReady = isSmtpConfigured();
+    const disable2FA = process.env.DISABLE_2FA === 'true';
+
+    // If 2FA is skipped, explicitly disabled, or SMTP is not configured (to prevent locking users out)
+    if (skip2FA || disable2FA || (!smtpReady && process.env.REQUIRE_2FA_WITHOUT_SMTP !== 'true')) {
       const payload = {
         user: {
           id: user.id,
@@ -110,7 +157,11 @@ router.post('/login', async (req, res) => {
         { expiresIn: '7d' },
         (err, token) => {
           if (err) throw err;
-          res.json({ token, user: { id: user.id, username: user.username, email: user.email, role: user.role, activePlans: user.activePlans } });
+          res.json({ 
+            token, 
+            requirePasswordChange: user.mustChangePassword === true, 
+            user: { id: user.id, username: user.username, email: user.email, role: user.role, activePlans: user.activePlans } 
+          });
         }
       );
     }
@@ -125,24 +176,27 @@ router.post('/login', async (req, res) => {
 
     // Send OTP via email
     try {
-      if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      if (smtpReady) {
         const transporter = createTransporter();
+        const fromAddress = process.env.SMTP_FROM || `"Interplanetary TV" <${process.env.SMTP_USER}>`;
         const mailOptions = {
-          from: `"Interplanetary" <${process.env.SMTP_USER}>`,
+          from: fromAddress,
           to: email,
-          subject: 'Your 2FA Login Code',
+          subject: 'Your 2FA Login Code - Interplanetary TV',
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
-              <h2 style="color: #333; text-align: center;">Login Verification</h2>
-              <p style="color: #555; text-align: center;">Use the code below to complete your login. It expires in 10 minutes.</p>
-              <div style="background: #f8f9fa; border-left: 4px solid #0056b3; padding: 20px; text-align: center; margin: 20px 0;">
-                <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #111;">${otpCode}</span>
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #1a1a2e; border-radius: 12px; background: #0b0c15; color: #ffffff;">
+              <h2 style="color: #6366f1; text-align: center; margin-top: 0;">Interplanetary TV</h2>
+              <h3 style="color: #e2e8f0; text-align: center;">Login Verification</h3>
+              <p style="color: #94a3b8; text-align: center; font-size: 14px;">Use the verification code below to complete your login. It expires in 10 minutes.</p>
+              <div style="background: rgba(99, 102, 241, 0.1); border: 1px solid #6366f1; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #a5b4fc;">${otpCode}</span>
               </div>
+              <p style="color: #64748b; font-size: 12px; text-align: center; margin-bottom: 0;">If you did not request this login code, please secure your account immediately.</p>
             </div>
           `
         };
         await transporter.sendMail(mailOptions);
-        console.log(`2FA Code sent to ${email}`);
+        console.log(`2FA Code successfully sent to ${email}`);
       } else {
         console.log(`[Email Simulation] 2FA Code for ${email}: ${otpCode}`);
       }
@@ -152,7 +206,12 @@ router.post('/login', async (req, res) => {
     }
 
     // Return requires2FA flag
-    res.json({ requires2FA: true, email: user.email, msg: 'Verification code sent to your email.' });
+    res.json({ 
+      requires2FA: true, 
+      email: user.email, 
+      msg: 'Verification code sent to your email.' + (!smtpReady ? ' (Simulation Mode)' : ''),
+      ...(smtpReady ? {} : { simulationOtp: otpCode })
+    });
 
   } catch (err) {
     console.error(err.message);
@@ -260,34 +319,40 @@ router.post('/forgot-password', async (req, res) => {
 
     // Send OTP via email
     try {
-      if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      const smtpReady = isSmtpConfigured();
+      if (smtpReady) {
         const transporter = createTransporter();
+        const fromAddress = process.env.SMTP_FROM || `"Interplanetary TV" <${process.env.SMTP_USER}>`;
         const mailOptions = {
-          from: `"Interplanetary" <${process.env.SMTP_USER}>`,
+          from: fromAddress,
           to: user.email,
-          subject: 'Password Reset Verification Code',
+          subject: 'Password Reset Verification Code - Interplanetary TV',
           html: `
-            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaea; border-radius: 8px;">
-              <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
-              <p style="color: #555; text-align: center;">You requested to reset your password. Use the verification code below. It expires in 10 minutes.</p>
-              <div style="background: #f8f9fa; border-left: 4px solid #e74c3c; padding: 20px; text-align: center; margin: 20px 0;">
-                <span style="font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #111;">${otpCode}</span>
+            <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #1a1a2e; border-radius: 12px; background: #0b0c15; color: #ffffff;">
+              <h2 style="color: #6366f1; text-align: center; margin-top: 0;">Interplanetary TV</h2>
+              <h3 style="color: #e2e8f0; text-align: center;">Reset Your Password</h3>
+              <p style="color: #94a3b8; text-align: center; font-size: 14px;">You requested to reset your password. Use the verification code below. It expires in 10 minutes.</p>
+              <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 8px; padding: 18px; text-align: center; margin: 24px 0;">
+                <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #fca5a5;">${otpCode}</span>
               </div>
-              <p style="color: #888; font-size: 0.85rem; text-align: center;">If you did not request this, please ignore this email.</p>
+              <p style="color: #64748b; font-size: 12px; text-align: center; margin-bottom: 0;">If you did not request this password reset, please ignore this email.</p>
             </div>
           `
         };
         await transporter.sendMail(mailOptions);
         console.log(`Password reset OTP sent to ${user.email}`);
+        return res.json({ msg: 'Password reset verification code has been sent to your email.' });
       } else {
         console.log(`[Email Simulation] Password Reset OTP for ${user.email}: ${otpCode}`);
+        return res.json({ 
+          msg: 'Password reset verification code generated (Simulation Mode).',
+          simulationOtp: otpCode 
+        });
       }
     } catch (emailErr) {
       console.error('Error sending reset password email:', emailErr);
       return res.status(500).json({ msg: 'Error sending verification email. Please try again later.' });
     }
-
-    res.json({ msg: 'Password reset verification code has been sent to your email.' });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });

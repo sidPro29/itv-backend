@@ -8,14 +8,24 @@ const auth = require('../middleware/auth');
 const superAdmin = require('../middleware/superAdmin');
 const { logActivity } = require('../utils/logger');
 
+const isSmtpConfigured = () => {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+};
+
 // Set up Nodemailer transporter
 const createTransporter = () => {
+  const port = parseInt(process.env.SMTP_PORT, 10) || 587;
+  const isSecure = process.env.SMTP_SECURE === 'true' || port === 465;
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-    port: process.env.SMTP_PORT || 587,
+    port: port,
+    secure: isSecure,
     auth: {
       user: process.env.SMTP_USER || 'ethereal_user',
       pass: process.env.SMTP_PASS || 'ethereal_pass'
+    },
+    tls: {
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED === 'false' ? false : true
     }
   });
 };
@@ -68,10 +78,12 @@ router.post('/invite', [auth, superAdmin], async (req, res) => {
 
     // Send Email
     try {
-      if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      if (isSmtpConfigured()) {
         const transporter = createTransporter();
+        const fromAddress = process.env.SMTP_FROM || `"Interplanetary CMS" <${process.env.SMTP_USER}>`;
+        const cmsUrl = process.env.CMS_FRONTEND_URL || 'https://admin.interplanetary.tv';
         const mailOptions = {
-          from: `"Interplanetary" <${process.env.SMTP_USER}>`,
+          from: fromAddress,
           to: email,
           subject: 'Invitation to join Interplanetary CMS',
           html: `
@@ -93,9 +105,8 @@ router.post('/invite', [auth, superAdmin], async (req, res) => {
                 </p>
                 
                 <div style="text-align: center; margin-top: 35px; margin-bottom: 10px;">
-                  <a href="http://localhost:5174/" style="background-color: #0056b3; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 6px; font-size: 16px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Login to CMS</a>
+                  <a href="${cmsUrl}" style="background-color: #0056b3; color: #ffffff; text-decoration: none; padding: 14px 35px; border-radius: 6px; font-size: 16px; font-weight: bold; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">Login to CMS</a>
                 </div>
-                <p style="text-align: center; font-size: 12px; color: #999;">(In production, this button will link to your live CMS domain)</p>
               </div>
               
               <div style="text-align: center; margin-top: 25px; color: #888888; font-size: 12px; line-height: 1.5;">
