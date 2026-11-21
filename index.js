@@ -102,8 +102,27 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('send_message', (data) => {
+  socket.on('send_message', async (data) => {
     if (data && data.recipientId) {
+      const senderId = data.sender || data.senderId;
+      if (senderId) {
+        try {
+          const Friendship = require('./models/Friendship');
+          const isFriend = await Friendship.findOne({
+            status: 'accepted',
+            $or: [
+              { requester: senderId, recipient: data.recipientId },
+              { requester: data.recipientId, recipient: senderId }
+            ]
+          });
+          if (!isFriend) {
+            socket.emit('message_rejected', { reason: 'Chat is disabled until friend request is approved.' });
+            return;
+          }
+        } catch (err) {
+          console.warn('Friendship check in socket send_message:', err);
+        }
+      }
       io.to(data.recipientId.toString()).emit('receive_message', data);
     }
   });

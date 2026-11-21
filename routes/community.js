@@ -739,21 +739,19 @@ router.post('/messages', auth, async (req, res) => {
       });
     }
 
-    // Voice and video calls strictly require an accepted friendship
-    if (type === 'audio_call' || type === 'video_call') {
-      const isFriend = await Friendship.findOne({
-        status: 'accepted',
-        $or: [
-          { requester: currentUser._id, recipient: recipientUser._id },
-          { requester: recipientUser._id, recipient: currentUser._id }
-        ]
+    // All messaging and calls strictly require an accepted friendship
+    const isFriend = await Friendship.findOne({
+      status: 'accepted',
+      $or: [
+        { requester: currentUser._id, recipient: recipientUser._id },
+        { requester: recipientUser._id, recipient: currentUser._id }
+      ]
+    });
+    if (!isAdmin && !isFriend) {
+      return res.status(403).json({
+        msg: 'Chat and calls are disabled until your friend request is approved. Please connect as friends first.',
+        requiresFriendship: true
       });
-      if (!isAdmin && !isFriend) {
-        return res.status(403).json({
-          msg: 'Voice and video calls are only available with accepted friends. Please send a friend request and wait for acceptance.',
-          requiresFriendship: true
-        });
-      }
     }
 
     const newMsg = new CommunityMessage({
