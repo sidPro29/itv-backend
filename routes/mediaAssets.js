@@ -215,11 +215,35 @@ router.get('/', async (req, res) => {
     if (req.query.type) {
       query.type = req.query.type;
     }
-    const assets = await MediaAsset.find(query).sort({ createdAt: -1 });
+    const assets = await MediaAsset.find(query).sort({ order: 1, createdAt: -1 });
     res.json(assets.map(asset => formatAsset(asset, req)));
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Reorder media assets (Admin only)
+router.put('/reorder', [auth, admin], async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ msg: 'orderedIds array is required' });
+    }
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } }
+      }
+    }));
+    if (bulkOps.length > 0) {
+      await MediaAsset.bulkWrite(bulkOps);
+    }
+    await logActivity(req, 'UPDATE', 'MediaAsset', `Reordered ${orderedIds.length} media assets`);
+    res.json({ msg: 'Media assets reordered successfully' });
+  } catch (err) {
+    console.error('Error reordering media assets:', err);
+    res.status(500).json({ msg: 'Server error: ' + err.message });
   }
 });
 

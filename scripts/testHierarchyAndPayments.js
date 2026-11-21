@@ -15,7 +15,7 @@ async function runTest() {
   // 1. Fetch community plans
   const enthusiastPlan = await Plan.findOne({ type: 'community', requiredBadge: 'enthusiast', billingCycle: 'Monthly' });
   const professionalPlan = await Plan.findOne({ type: 'community', requiredBadge: 'professional', billingCycle: 'Monthly' });
-  const entrepreneurPlan = await Plan.findOne({ type: 'community', requiredBadge: 'entrepreneur', billingCycle: 'Monthly' });
+  const entrepreneurPlan = await Plan.findOne≠({ type: 'community', requiredBadge: 'entrepreneur', billingCycle: 'Monthly' });
 
   console.log('\n--- FETCHED PLANS ---');
   console.log(`1. Enthusiast: ${enthusiastPlan.name} (req: ${enthusiastPlan.requiredBadge}) - €${enthusiastPlan.amount}`);

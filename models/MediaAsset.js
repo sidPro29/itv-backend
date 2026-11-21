@@ -33,6 +33,7 @@ const MediaAssetSchema = new mongoose.Schema({
     planName: String
   }],
   publishedDate: { type: Date, default: Date.now },
+  order: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 }, {
   toJSON: { virtuals: true },

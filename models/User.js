@@ -86,11 +86,12 @@ const UserSchema = new mongoose.Schema({
   notifications: [{
     title: String,
     message: String,
-    type: { type: String, enum: ['chat', 'call', 'verification', 'system'], default: 'system' },
+    type: { type: String, enum: ['chat', 'call', 'verification', 'system', 'friend_request', 'meeting'], default: 'system' },
     link: String,
     read: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
   }],
+  order: { type: Number, default: 0 },
 
   tempPasswordExpiresAt: { type: Date },
   mustChangePassword: { type: Boolean, default: false },

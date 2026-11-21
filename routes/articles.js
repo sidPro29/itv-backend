@@ -9,11 +9,35 @@ const { logActivity } = require('../utils/logger');
 // Get all articles
 router.get('/', async (req, res) => {
   try {
-    const articles = await Article.find().sort({ createdAt: -1 });
+    const articles = await Article.find().sort({ order: 1, createdAt: -1 });
     res.json(articles);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Reorder articles (Admin only)
+router.put('/reorder', [auth, admin], async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ msg: 'orderedIds array is required' });
+    }
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } }
+      }
+    }));
+    if (bulkOps.length > 0) {
+      await Article.bulkWrite(bulkOps);
+    }
+    await logActivity(req, 'UPDATE', 'Article', `Reordered ${orderedIds.length} articles`);
+    res.json({ msg: 'Articles reordered successfully' });
+  } catch (err) {
+    console.error('Error reordering articles:', err);
+    res.status(500).json({ msg: 'Server error: ' + err.message });
   }
 });
 

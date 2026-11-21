@@ -109,8 +109,24 @@ io.on('connection', (socket) => {
   });
 
   // WebRTC Signaling Events (1-to-1 Legacy compatibility)
-  socket.on('call_user', ({ recipientId, offer, callType, callerInfo }) => {
+  socket.on('call_user', async ({ recipientId, offer, callType, callerInfo }) => {
     console.log(`[Call] Call initiated to ${recipientId} (${callType})`);
+    try {
+      const Friendship = require('./models/Friendship');
+      const isFriend = await Friendship.findOne({
+        status: 'accepted',
+        $or: [
+          { requester: callerInfo?.userId, recipient: recipientId },
+          { requester: recipientId, recipient: callerInfo?.userId }
+        ]
+      });
+      if (!isFriend) {
+        socket.emit('call_rejected', { reason: 'Voice and video calls are only available with accepted friends.' });
+        return;
+      }
+    } catch (err) {
+      console.warn('Friendship check in call_user:', err);
+    }
     io.to(recipientId.toString()).emit('incoming_call', {
       callerId: callerInfo?.userId,
       callerName: callerInfo?.fullName,
@@ -232,9 +248,30 @@ io.on('connection', (socket) => {
   };
 
   // 1. Initiate or Invite to Call Room
-  socket.on('call_room_invite', ({ roomId, recipientIds, callerInfo, callType }) => {
+  socket.on('call_room_invite', async ({ roomId, recipientIds, callerInfo, callType }) => {
     const list = Array.isArray(recipientIds) ? recipientIds.filter(Boolean) : [recipientIds].filter(Boolean);
     const callerId = callerInfo?.userId;
+
+    // For 1-on-1 direct calls, verify friendship
+    if (list.length === 1 && callerId && callerId.toString() !== list[0].toString()) {
+      try {
+        const Friendship = require('./models/Friendship');
+        const isFriend = await Friendship.findOne({
+          status: 'accepted',
+          $or: [
+            { requester: callerId, recipient: list[0] },
+            { requester: list[0], recipient: callerId }
+          ]
+        });
+        if (!isFriend) {
+          socket.emit('call_error', { msg: 'Voice and video calls are only allowed between accepted friends.' });
+          return;
+        }
+      } catch (err) {
+        console.warn('Friendship check in call_room_invite:', err);
+      }
+    }
+
     const allUserIds = Array.from(new Set([callerId, ...list].filter(Boolean)));
     const conversationKey = (list.length === 1 && callerId) ? getConversationKey(callerId, list[0]) : `group_${roomId}`;
 

@@ -19,6 +19,7 @@ const ArticleSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
   }],
   publishedDate: { type: Date, default: Date.now },
+  order: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 

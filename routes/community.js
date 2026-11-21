@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const CommunityMessage = require('../models/CommunityMessage');
 const ScheduledCall = require('../models/ScheduledCall');
+const Friendship = require('../models/Friendship');
 const auth = require('../middleware/auth');
 
 // Utility helper to check if user has an active ITV Web subscription
@@ -12,6 +13,18 @@ const hasActiveWebSubscription = (user) => {
   if (!user.activePlans || !Array.isArray(user.activePlans)) return false;
   const now = new Date();
   return user.activePlans.some(plan => !plan.expiryDate || new Date(plan.expiryDate) > now);
+};
+
+// Utility helper to check if user has ANY active plan (Web plan or Community plan)
+const hasAnyActivePlan = (user) => {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'superAdmin') return true;
+  if (user.communitySubscription && user.communitySubscription.tier && user.communitySubscription.tier !== 'free') {
+    if (!user.communitySubscription.expiryDate || new Date(user.communitySubscription.expiryDate) > new Date()) {
+      return true;
+    }
+  }
+  return hasActiveWebSubscription(user);
 };
 
 // @route   GET /api/community/me
@@ -343,6 +356,292 @@ router.post('/unblock/:targetUserId', auth, async (req, res) => {
   }
 });
 
+// --- FRIEND REQUESTS & FRIENDSHIP ENDPOINTS ---
+
+// @route   GET /api/community/friends
+// @desc    Get user's accepted friends, pending sent, and pending received requests
+// @access  Private
+router.get('/friends', auth, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const friendships = await Friendship.find({
+      $or: [{ requester: currentUserId }, { recipient: currentUserId }]
+    })
+      .populate('requester', 'username email verificationBadge verificationStatus communityProfile')
+      .populate('recipient', 'username email verificationBadge verificationStatus communityProfile')
+      .sort({ updatedAt: -1 });
+
+    const friends = [];
+    const pendingReceived = [];
+    const pendingSent = [];
+
+    friendships.forEach(f => {
+      if (!f.requester || !f.recipient) return;
+      const isRequester = f.requester._id.toString() === currentUserId.toString();
+      const otherUser = isRequester ? f.recipient : f.requester;
+      if (!otherUser) return;
+
+      const userSummary = {
+        _id: otherUser._id,
+        username: otherUser.username || otherUser.communityProfile?.fullName || 'Space Member',
+        fullName: otherUser.communityProfile?.fullName || otherUser.username || 'Space Member',
+        avatarUrl: otherUser.communityProfile?.avatarUrl || '',
+        category: otherUser.communityProfile?.category || 'enthusiast',
+        verificationBadge: otherUser.verificationBadge || 'none',
+        friendshipId: f._id,
+        createdAt: f.createdAt,
+        updatedAt: f.updatedAt
+      };
+
+      if (f.status === 'accepted') {
+        friends.push(userSummary);
+      } else if (f.status === 'pending') {
+        if (isRequester) {
+          pendingSent.push(userSummary);
+        } else {
+          pendingReceived.push(userSummary);
+        }
+      }
+    });
+
+    res.json({
+      friends,
+      pendingReceived,
+      pendingSent,
+      totalFriends: friends.length,
+      pendingReceivedCount: pendingReceived.length
+    });
+  } catch (err) {
+    console.error('Error fetching friends:', err);
+    res.status(500).json({ msg: 'Server error fetching friends' });
+  }
+});
+
+// @route   GET /api/community/friends/status/:targetUserId
+// @desc    Check friendship status with a target user
+// @access  Private
+router.get('/friends/status/:targetUserId', auth, async (req, res) => {
+  try {
+    const currentUserId = req.user.id;
+    const targetUserId = req.params.targetUserId;
+
+    if (currentUserId.toString() === targetUserId.toString()) {
+      return res.json({ status: 'self' });
+    }
+
+    const friendship = await Friendship.findOne({
+      $or: [
+        { requester: currentUserId, recipient: targetUserId },
+        { requester: targetUserId, recipient: currentUserId }
+      ]
+    });
+
+    if (!friendship) {
+      return res.json({ status: 'none' });
+    }
+
+    if (friendship.status === 'accepted') {
+      return res.json({ status: 'friends', friendshipId: friendship._id });
+    }
+
+    if (friendship.status === 'pending') {
+      if (friendship.requester.toString() === currentUserId.toString()) {
+        return res.json({ status: 'pending_sent', friendshipId: friendship._id });
+      } else {
+        return res.json({ status: 'pending_received', friendshipId: friendship._id });
+      }
+    }
+
+    res.json({ status: 'none', friendshipId: friendship._id });
+  } catch (err) {
+    console.error('Error checking friendship status:', err);
+    res.status(500).json({ msg: 'Server error checking friendship status' });
+  }
+});
+
+// @route   POST /api/community/friends/request/:recipientId
+// @desc    Send a friend request (requires any active plan)
+// @access  Private
+router.post('/friends/request/:recipientId', auth, async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.user.id);
+    if (!currentUser) return res.status(404).json({ msg: 'User not found' });
+
+    const recipientId = req.params.recipientId;
+    if (currentUser._id.toString() === recipientId.toString()) {
+      return res.status(400).json({ msg: 'You cannot send a friend request to yourself' });
+    }
+
+    const recipientUser = await User.findById(recipientId);
+    if (!recipientUser) return res.status(404).json({ msg: 'Recipient user not found' });
+
+    // Plan requirement: Must have any active plan (web plan or community plan) or be admin
+    if (!hasAnyActivePlan(currentUser)) {
+      return res.status(403).json({
+        msg: 'You must have an active subscription plan to send friend requests. Please subscribe or upgrade your plan to connect.',
+        requiresPlan: true
+      });
+    }
+
+    // Check block list
+    const myBlocked = currentUser.blockedUsers || [];
+    const recipientBlocked = recipientUser.blockedUsers || [];
+    if (myBlocked.map(id => id.toString()).includes(recipientId.toString())) {
+      return res.status(403).json({ msg: 'You have blocked this member. Unblock to send a friend request.' });
+    }
+    if (recipientBlocked.map(id => id.toString()).includes(currentUser._id.toString())) {
+      return res.status(403).json({ msg: 'This member has blocked interaction with your account.' });
+    }
+
+    let existing = await Friendship.findOne({
+      $or: [
+        { requester: currentUser._id, recipient: recipientId },
+        { requester: recipientId, recipient: currentUser._id }
+      ]
+    });
+
+    if (existing) {
+      if (existing.status === 'accepted') {
+        return res.status(400).json({ msg: 'You are already friends with this member', status: 'friends' });
+      }
+      if (existing.status === 'pending') {
+        if (existing.requester.toString() === currentUser._id.toString()) {
+          return res.status(400).json({ msg: 'Friend request already sent and pending', status: 'pending_sent' });
+        } else {
+          // Target had already sent request to current user, so accept it!
+          existing.status = 'accepted';
+          existing.updatedAt = new Date();
+          await existing.save();
+
+          // Notify recipient (the other user)
+          if (!recipientUser.notifications) recipientUser.notifications = [];
+          recipientUser.notifications.push({
+            title: 'Friend Request Accepted! 🚀',
+            message: `${currentUser.communityProfile?.fullName || currentUser.username} accepted your friend request. You can now make voice and video calls!`,
+            type: 'friend_request',
+            link: `/?recipient=${currentUser._id}`,
+            read: false,
+            createdAt: new Date()
+          });
+          await recipientUser.save();
+
+          return res.json({ msg: 'Friend request accepted! You are now friends.', status: 'friends', friendship: existing });
+        }
+      }
+      // If rejected, re-open request
+      existing.requester = currentUser._id;
+      existing.recipient = recipientId;
+      existing.status = 'pending';
+      existing.updatedAt = new Date();
+      await existing.save();
+    } else {
+      existing = new Friendship({
+        requester: currentUser._id,
+        recipient: recipientId,
+        status: 'pending'
+      });
+      await existing.save();
+    }
+
+    // Push notification to recipient
+    if (!recipientUser.notifications) recipientUser.notifications = [];
+    recipientUser.notifications.push({
+      title: 'New Friend Request 🤝',
+      message: `${currentUser.communityProfile?.fullName || currentUser.username} sent you a friend request.`,
+      type: 'friend_request',
+      link: `/?recipient=${currentUser._id}`,
+      read: false,
+      createdAt: new Date()
+    });
+    await recipientUser.save();
+
+    res.json({
+      msg: 'Friend request sent successfully!',
+      status: 'pending_sent',
+      friendship: existing
+    });
+  } catch (err) {
+    console.error('Error sending friend request:', err);
+    res.status(500).json({ msg: 'Server error sending friend request' });
+  }
+});
+
+// @route   PUT /api/community/friends/respond/:friendshipId
+// @desc    Accept or reject a friend request
+// @access  Private
+router.put('/friends/respond/:friendshipId', auth, async (req, res) => {
+  try {
+    const { action } = req.body; // 'accept' or 'reject'
+    if (!['accept', 'reject'].includes(action)) {
+      return res.status(400).json({ msg: 'Invalid action. Must be accept or reject.' });
+    }
+
+    const friendship = await Friendship.findById(req.params.friendshipId);
+    if (!friendship) return res.status(404).json({ msg: 'Friend request not found' });
+
+    // Only the recipient can accept or reject
+    if (friendship.recipient.toString() !== req.user.id.toString()) {
+      return res.status(403).json({ msg: 'Only the recipient can respond to this friend request' });
+    }
+
+    const recipientUser = await User.findById(req.user.id);
+    const requesterUser = await User.findById(friendship.requester);
+
+    if (action === 'accept') {
+      friendship.status = 'accepted';
+      friendship.updatedAt = new Date();
+      await friendship.save();
+
+      // Send notification to requester
+      if (requesterUser) {
+        if (!requesterUser.notifications) requesterUser.notifications = [];
+        requesterUser.notifications.push({
+          title: 'Friend Request Accepted! 🚀',
+          message: `${recipientUser?.communityProfile?.fullName || recipientUser?.username || 'A member'} accepted your friend request. You can now start voice and video calls!`,
+          type: 'friend_request',
+          link: `/?recipient=${recipientUser?._id}`,
+          read: false,
+          createdAt: new Date()
+        });
+        await requesterUser.save();
+      }
+
+      res.json({ msg: 'Friend request accepted! You are now friends.', status: 'friends', friendship });
+    } else {
+      friendship.status = 'rejected';
+      friendship.updatedAt = new Date();
+      await friendship.save();
+
+      res.json({ msg: 'Friend request declined.', status: 'none', friendship });
+    }
+  } catch (err) {
+    console.error('Error responding to friend request:', err);
+    res.status(500).json({ msg: 'Server error responding to friend request' });
+  }
+});
+
+// @route   DELETE /api/community/friends/:friendshipId
+// @desc    Cancel a friend request or unfriend
+// @access  Private
+router.delete('/friends/:friendshipId', auth, async (req, res) => {
+  try {
+    const friendship = await Friendship.findById(req.params.friendshipId);
+    if (!friendship) return res.status(404).json({ msg: 'Friendship record not found' });
+
+    // Must be either requester or recipient
+    const userId = req.user.id.toString();
+    if (friendship.requester.toString() !== userId && friendship.recipient.toString() !== userId) {
+      return res.status(403).json({ msg: 'Not authorized to remove this connection' });
+    }
+
+    await Friendship.findByIdAndDelete(req.params.friendshipId);
+    res.json({ msg: 'Friend connection removed successfully', status: 'none' });
+  } catch (err) {
+    console.error('Error removing friendship:', err);
+    res.status(500).json({ msg: 'Server error removing friendship' });
+  }
+});
+
 // @route   GET /api/community/notifications
 // @desc    Get user notifications
 // @access  Private
@@ -438,6 +737,23 @@ router.post('/messages', auth, async (req, res) => {
         msg: 'Private messaging and calls require an active ITV plan and a Community subscription tier. Please upgrade to connect.',
         requiresPlanUpgrade: true 
       });
+    }
+
+    // Voice and video calls strictly require an accepted friendship
+    if (type === 'audio_call' || type === 'video_call') {
+      const isFriend = await Friendship.findOne({
+        status: 'accepted',
+        $or: [
+          { requester: currentUser._id, recipient: recipientUser._id },
+          { requester: recipientUser._id, recipient: currentUser._id }
+        ]
+      });
+      if (!isAdmin && !isFriend) {
+        return res.status(403).json({
+          msg: 'Voice and video calls are only available with accepted friends. Please send a friend request and wait for acceptance.',
+          requiresFriendship: true
+        });
+      }
     }
 
     const newMsg = new CommunityMessage({

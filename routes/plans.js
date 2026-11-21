@@ -11,11 +11,36 @@ const { logActivity } = require('../utils/logger');
 // Get all active plans
 router.get('/', async (req, res) => {
   try {
-    const plans = await Plan.find({ isActive: { $ne: false } }).sort({ amount: 1 });
+    const plans = await Plan.find({ isActive: { $ne: false } }).sort({ order: 1, amount: 1 });
     res.json(plans);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Reorder plans (Admin only)
+router.put('/reorder', [auth, admin], async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ msg: 'orderedIds array is required' });
+    }
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } }
+      }
+    }));
+    if (bulkOps.length > 0) {
+      await Plan.bulkWrite(bulkOps);
+    }
+    await logActivity(req, 'UPDATE', 'Plan', `Reordered ${orderedIds.length} plans`);
+    const updatedPlans = await Plan.find({ isActive: { $ne: false } }).sort({ order: 1, amount: 1 });
+    res.json(updatedPlans);
+  } catch (err) {
+    console.error('Error reordering plans:', err);
+    res.status(500).json({ msg: 'Server error: ' + err.message });
   }
 });
 

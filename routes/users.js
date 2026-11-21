@@ -35,11 +35,34 @@ router.get('/my-purchases', auth, async (req, res) => {
 // Get all users (Admin only)
 router.get('/', [auth, admin], async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    const users = await User.find().select('-password').sort({ order: 1, createdAt: -1 });
     res.json(users);
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// Reorder users (Admin only)
+router.put('/reorder', [auth, admin], async (req, res) => {
+  try {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+      return res.status(400).json({ msg: 'orderedIds array is required' });
+    }
+    const bulkOps = orderedIds.map((id, index) => ({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { order: index } }
+      }
+    }));
+    if (bulkOps.length > 0) {
+      await User.bulkWrite(bulkOps);
+    }
+    res.json({ msg: 'Users reordered successfully' });
+  } catch (err) {
+    console.error('Error reordering users:', err);
+    res.status(500).json({ msg: 'Server error: ' + err.message });
   }
 });
 

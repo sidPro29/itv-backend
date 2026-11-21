@@ -15,6 +15,7 @@ const PlanSchema = new mongoose.Schema({
   currency: { type: String, default: 'EUR' },
   billingCycle: { type: String, default: 'Monthly' },
   isActive: { type: Boolean, default: true },
+  order: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
