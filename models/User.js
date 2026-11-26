@@ -73,7 +73,22 @@ const UserSchema = new mongoose.Schema({
       industry: String,
       description: String
     },
-    interests: [String]
+    interests: [String],
+    visibilitySettings: {
+      avatarUrl: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      coverUrl: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      mobile: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      email: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      bio: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      location: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      category: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      links: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      workExperience: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      education: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      skills: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      certificates: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } },
+      businessDetails: { planHolders: { type: Boolean, default: true }, friends: { type: Boolean, default: true } }
+    }
   },
   
   communitySubscription: {

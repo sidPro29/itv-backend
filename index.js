@@ -401,6 +401,8 @@ io.on('connection', (socket) => {
       fullName: userInfo?.fullName || 'Space Member',
       avatarUrl: userInfo?.avatarUrl || '',
       category: userInfo?.category || '',
+      timeZone: userInfo?.timeZone || '',
+      utcOffsetMinutes: userInfo?.utcOffsetMinutes,
       isAudioMuted: Boolean(userInfo?.isAudioMuted),
       isVideoOff: Boolean(userInfo?.isVideoOff),
       joinedAt: Date.now()

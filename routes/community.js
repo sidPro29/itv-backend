@@ -77,32 +77,45 @@ router.post('/profile', auth, async (req, res) => {
       certificates,
       businessDetails,
       interests,
+      visibilitySettings,
+      mobile,
       verificationDocs,
       submitForVerification
     } = req.body;
 
+    // Merge with existing communityProfile so partial updates (like avatarUrl or coverUrl) never reset other fields
+    const existing = user.communityProfile && typeof user.communityProfile.toObject === 'function'
+      ? user.communityProfile.toObject()
+      : { ...(user.communityProfile || {}) };
+
     user.communityProfile = {
-      fullName: fullName || user.username || user.email.split('@')[0],
-      bio: bio || '',
-      category: category || 'enthusiast',
-      location: location || '',
-      avatarUrl: avatarUrl || '',
-      coverUrl: coverUrl || '',
-      linkedinUrl: linkedinUrl || '',
-      additionalLinks: Array.isArray(additionalLinks) ? additionalLinks : [],
-      workExperience: Array.isArray(workExperience) ? workExperience : [],
-      education: Array.isArray(education) ? education : [],
-      skills: Array.isArray(skills) ? skills : [],
-      certificates: Array.isArray(certificates) ? certificates : [],
-      businessDetails: businessDetails || {},
-      interests: Array.isArray(interests) ? interests : []
+      ...existing,
+      ...(fullName !== undefined ? { fullName: fullName || user.username || user.email.split('@')[0] } : {}),
+      ...(bio !== undefined ? { bio: bio || '' } : {}),
+      ...(category !== undefined ? { category: category || 'enthusiast' } : {}),
+      ...(location !== undefined ? { location: location || '' } : {}),
+      ...(avatarUrl !== undefined ? { avatarUrl: avatarUrl || '' } : {}),
+      ...(coverUrl !== undefined ? { coverUrl: coverUrl || '' } : {}),
+      ...(linkedinUrl !== undefined ? { linkedinUrl: linkedinUrl || '' } : {}),
+      ...(additionalLinks !== undefined ? { additionalLinks: Array.isArray(additionalLinks) ? additionalLinks : [] } : {}),
+      ...(workExperience !== undefined ? { workExperience: Array.isArray(workExperience) ? workExperience : [] } : {}),
+      ...(education !== undefined ? { education: Array.isArray(education) ? education : [] } : {}),
+      ...(skills !== undefined ? { skills: Array.isArray(skills) ? skills : [] } : {}),
+      ...(certificates !== undefined ? { certificates: Array.isArray(certificates) ? certificates : [] } : {}),
+      ...(businessDetails !== undefined ? { businessDetails: businessDetails || {} } : {}),
+      ...(interests !== undefined ? { interests: Array.isArray(interests) ? interests : [] } : {}),
+      ...(visibilitySettings !== undefined ? { visibilitySettings } : {})
     };
+
+    if (mobile !== undefined) {
+      user.mobile = mobile;
+    }
 
     if (verificationDocs) {
       user.verificationDocs = {
         idDocumentUrl: verificationDocs.idDocumentUrl || '',
         docType: verificationDocs.docType || 'ID Document',
-        legalName: verificationDocs.legalName || fullName || '',
+        legalName: verificationDocs.legalName || fullName || existing.fullName || '',
         address: verificationDocs.address || '',
         submittedAt: new Date()
       };
@@ -228,13 +241,33 @@ router.get('/members/:id', auth, async (req, res) => {
 
     const isCurrentVerified = currentUser.verificationStatus === 'verified';
     const mProfile = targetMember.communityProfile || {};
+    const vis = mProfile.visibilitySettings || {};
+    const isSelf = currentUser._id.toString() === targetMember._id.toString();
+
+    const friendshipDoc = isSelf ? null : await Friendship.findOne({
+      status: 'accepted',
+      $or: [
+        { requester: currentUser._id, recipient: targetMember._id },
+        { requester: targetMember._id, recipient: currentUser._id }
+      ]
+    });
+    const isFriend = Boolean(friendshipDoc);
+    const hasPlan = hasAnyActivePlan(currentUser);
+
+    const canViewField = (fieldKey) => {
+      if (isSelf) return true;
+      const rule = vis[fieldKey] || { planHolders: true, friends: true };
+      const allowPlan = rule.planHolders !== false;
+      const allowFriend = rule.friends !== false;
+      return (hasPlan && allowPlan) || (isFriend && allowFriend);
+    };
 
     const basicInfo = {
       _id: targetMember._id,
       username: targetMember.username || mProfile.fullName || 'Space Member',
       fullName: mProfile.fullName || targetMember.username || 'Space Member',
-      avatarUrl: mProfile.avatarUrl || '',
-      category: mProfile.category || 'enthusiast',
+      avatarUrl: canViewField('avatarUrl') ? (mProfile.avatarUrl || '') : '',
+      category: canViewField('category') ? (mProfile.category || 'enthusiast') : '',
       verificationBadge: targetMember.verificationBadge || 'none',
       verificationStatus: targetMember.verificationStatus || 'unsubmitted',
       isBlockedByMe,
@@ -251,16 +284,18 @@ router.get('/members/:id', auth, async (req, res) => {
 
     res.json({
       ...basicInfo,
-      bio: mProfile.bio || '',
-      location: mProfile.location || '',
-      coverUrl: mProfile.coverUrl || '',
-      linkedinUrl: mProfile.linkedinUrl || '',
-      additionalLinks: mProfile.additionalLinks || [],
-      workExperience: mProfile.workExperience || [],
-      education: mProfile.education || [],
-      skills: mProfile.skills || [],
-      certificates: mProfile.certificates || [],
-      businessDetails: mProfile.businessDetails || {},
+      email: canViewField('email') ? (targetMember.email || '') : '',
+      mobile: canViewField('mobile') ? (targetMember.mobile || '') : '',
+      bio: canViewField('bio') ? (mProfile.bio || '') : '',
+      location: canViewField('location') ? (mProfile.location || '') : '',
+      coverUrl: canViewField('coverUrl') ? (mProfile.coverUrl || '') : '',
+      linkedinUrl: canViewField('links') ? (mProfile.linkedinUrl || '') : '',
+      additionalLinks: canViewField('links') ? (mProfile.additionalLinks || []) : [],
+      workExperience: canViewField('workExperience') ? (mProfile.workExperience || []) : [],
+      education: canViewField('education') ? (mProfile.education || []) : [],
+      skills: canViewField('skills') ? (mProfile.skills || []) : [],
+      certificates: canViewField('certificates') ? (mProfile.certificates || []) : [],
+      businessDetails: canViewField('businessDetails') ? (mProfile.businessDetails || {}) : {},
       interests: mProfile.interests || [],
       isLocked: false,
       communityTier: currentUser.communitySubscription?.tier || 'free'
